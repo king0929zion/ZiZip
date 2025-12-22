@@ -13,6 +13,7 @@ enum class ModelProviderType(
     // 国际提供商
     OPENAI("OpenAI", "https://api.openai.com/v1"),
     GOOGLE("Google Gemini", "https://generativelanguage.googleapis.com/v1beta"),
+    GEMINI("Google Gemini", "https://generativelanguage.googleapis.com/v1beta"),  // 别名
     ANTHROPIC("Anthropic", "https://api.anthropic.com/v1"),
     OPENROUTER("OpenRouter", "https://openrouter.ai/api/v1"),
     GROQ("Groq", "https://api.groq.com/openai/v1"),
@@ -21,7 +22,9 @@ enum class ModelProviderType(
     // 国内提供商
     ZHIPU("智谱 AI", "https://open.bigmodel.cn/api/paas/v4"),
     SILICONFLOW("硅基流动", "https://api.siliconflow.cn/v1"),
+    SILICON_FLOW("硅基流动", "https://api.siliconflow.cn/v1"),  // 别名
     MODELSCOPE("魔搭社区", "https://api-inference.modelscope.cn/v1"),
+    MODEL_SCOPE("魔搭社区", "https://api-inference.modelscope.cn/v1"),  // 别名
     NVIDIA("英伟达 NIM", "https://integrate.api.nvidia.com/v1"),
     DEEPSEEK("DeepSeek", "https://api.deepseek.com/v1"),
     MOONSHOT("月之暗面", "https://api.moonshot.cn/v1"),

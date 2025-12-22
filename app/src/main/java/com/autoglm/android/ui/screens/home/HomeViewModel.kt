@@ -66,8 +66,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val models: StateFlow<List<ModelConfig>> = modelRepo.models
     val activeModelId: StateFlow<String?> = modelRepo.activeModelId
     
+    // 历史记录列表
+    private val _historyList = MutableStateFlow<List<ConversationSummary>>(emptyList())
+    val historyList: StateFlow<List<ConversationSummary>> = _historyList.asStateFlow()
+    
     init {
         initialize()
+        loadHistory()
     }
     
     private fun initialize() {
@@ -76,6 +81,30 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 isInitialized = true,
                 language = settingsRepo.getLanguage(),
                 agentModeEnabled = settingsRepo.isAgentModeEnabled()
+            )
+        }
+    }
+    
+    private fun loadHistory() {
+        viewModelScope.launch {
+            // TODO: 从 historyRepo 加载真实数据
+            _historyList.value = listOf(
+                ConversationSummary("1", "今天的任务", "帮我打开微信发送消息", System.currentTimeMillis()),
+                ConversationSummary("2", "文件整理", "整理下载文件夹", System.currentTimeMillis() - 86400000),
+                ConversationSummary("3", "购物清单", "帮我列一个购物清单", System.currentTimeMillis() - 172800000)
+            )
+        }
+    }
+    
+    fun loadConversation(conversationId: String) {
+        viewModelScope.launch {
+            // TODO: 从 historyRepo 加载对话内容
+            // 目前清空并显示一条提示消息
+            _uiState.value = _uiState.value.copy(
+                chatItems = listOf(
+                    ChatItem(isUser = false, message = "已加载对话 $conversationId")
+                ),
+                currentSessionId = conversationId
             )
         }
     }

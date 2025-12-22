@@ -3,6 +3,8 @@ package com.autoglm.android.ui.screens.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,8 +21,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -28,9 +33,10 @@ import com.autoglm.android.data.model.TaskStatus
 import com.autoglm.android.ui.components.*
 import com.autoglm.android.ui.navigation.Screen
 import com.autoglm.android.ui.theme.*
+import kotlinx.coroutines.launch
 
 /**
- * 主页面 - Gemini 风格聊天界面
+ * 主页面 - 优化后的聊天界面
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,11 +47,14 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val models by viewModel.models.collectAsState()
     val activeModelId by viewModel.activeModelId.collectAsState()
+    val historyList by viewModel.historyList.collectAsState()
     
     var inputText by remember { mutableStateOf("") }
     var showModelSelector by remember { mutableStateOf(false) }
     
     val listState = rememberLazyListState()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     
     // 自动滚动到底部
     LaunchedEffect(uiState.chatItems.size) {
@@ -54,85 +63,115 @@ fun HomeScreen(
         }
     }
     
-    Scaffold(
-        containerColor = Grey100
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // 顶部导航栏
-            HeaderBar(
-                currentModel = viewModel.getActiveModel(),
-                onHistoryClick = { navController.navigate(Screen.History.route) },
-                onModelSelectorClick = { showModelSelector = true },
-                onNewChatClick = { viewModel.startNewConversation() },
-                onSettingsClick = { navController.navigate(Screen.Settings.route) }
-            )
-            
-            // 聊天区域
-            Box(
+    // 侧边栏抽屉
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = PrimaryWhite,
+                modifier = Modifier.width(300.dp)
+            ) {
+                HistoryDrawerContent(
+                    historyList = historyList,
+                    onHistoryItemClick = { conversationId ->
+                        viewModel.loadConversation(conversationId)
+                        scope.launch { drawerState.close() }
+                    },
+                    onSettingsClick = {
+                        scope.launch { 
+                            drawerState.close()
+                            navController.navigate(Screen.Settings.route)
+                        }
+                    },
+                    onNewChatClick = {
+                        viewModel.startNewConversation()
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            containerColor = PrimaryWhite,  // 状态栏颜色与顶栏一致
+            topBar = {
+                // 顶部导航栏 - 使用白色背景
+                HeaderBar(
+                    currentModel = viewModel.getActiveModel(),
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onModelSelectorClick = { showModelSelector = true },
+                    onNewChatClick = { viewModel.startNewConversation() }
+                )
+            }
+        ) { paddingValues ->
+            Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .fillMaxSize()
+                    .padding(paddingValues)
                     .background(PrimaryWhite)
             ) {
-                if (uiState.chatItems.isEmpty()) {
-                    // 空状态
-                    EmptyState(greeting = viewModel.getGreeting())
-                } else {
-                    // 聊天列表
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            horizontal = 20.dp,
-                            vertical = 16.dp
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Agent Banner
-                        uiState.currentExecution?.let { execution ->
-                            if (execution.isActive) {
-                                item {
-                                    AgentBanner(
-                                        execution = execution,
-                                        onPause = { viewModel.pauseTask() },
-                                        onResume = { viewModel.resumeTask() },
-                                        onStop = { viewModel.stopTask() },
-                                        onClick = { /* TODO: 打开虚拟屏幕预览 */ }
-                                    )
+                // 聊天区域 - 使用浅灰背景，底部有圆角
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                        .background(Grey100)
+                ) {
+                    if (uiState.chatItems.isEmpty()) {
+                        // 空状态
+                        EmptyState(greeting = viewModel.getGreeting())
+                    } else {
+                        // 聊天列表
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                horizontal = 20.dp,
+                                vertical = 16.dp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Agent Banner
+                            uiState.currentExecution?.let { execution ->
+                                if (execution.isActive) {
+                                    item {
+                                        AgentBanner(
+                                            execution = execution,
+                                            onPause = { viewModel.pauseTask() },
+                                            onResume = { viewModel.resumeTask() },
+                                            onStop = { viewModel.stopTask() },
+                                            onClick = { /* TODO: 打开虚拟屏幕预览 */ }
+                                        )
+                                    }
                                 }
                             }
-                        }
-                        
-                        items(uiState.chatItems, key = { it.id }) { item ->
-                            ChatItemView(
-                                item = item,
-                                onTaskTap = { /* TODO: 打开任务详情 */ },
-                                onPause = { viewModel.pauseTask() },
-                                onResume = { viewModel.resumeTask() },
-                                onStop = { viewModel.stopTask() }
-                            )
+                            
+                            items(uiState.chatItems, key = { it.id }) { item ->
+                                ChatItemView(
+                                    item = item,
+                                    onTaskTap = { /* TODO: 打开任务详情 */ },
+                                    onPause = { viewModel.pauseTask() },
+                                    onResume = { viewModel.resumeTask() },
+                                    onStop = { viewModel.stopTask() }
+                                )
+                            }
                         }
                     }
                 }
+                
+                // 底部输入栏 - 白色背景
+                InputBar(
+                    text = inputText,
+                    onTextChange = { inputText = it },
+                    onSend = {
+                        viewModel.sendMessage(inputText)
+                        inputText = ""
+                    },
+                    isEnabled = uiState.isInitialized && !uiState.isChatRunning,
+                    isAgentRunning = uiState.currentExecution?.isActive == true,
+                    onStop = { viewModel.stopTask() }
+                )
             }
-            
-            // 底部输入栏
-            InputBar(
-                text = inputText,
-                onTextChange = { inputText = it },
-                onSend = {
-                    viewModel.sendMessage(inputText)
-                    inputText = ""
-                },
-                isEnabled = uiState.isInitialized && !uiState.isChatRunning,
-                isAgentRunning = uiState.currentExecution?.isActive == true,
-                onStop = { viewModel.stopTask() }
-            )
         }
     }
     
@@ -150,62 +189,186 @@ fun HomeScreen(
 }
 
 /**
+ * 历史记录侧边栏内容
+ */
+@Composable
+private fun HistoryDrawerContent(
+    historyList: List<com.autoglm.android.data.model.ConversationSummary>,
+    onHistoryItemClick: (String) -> Unit,
+    onSettingsClick: () -> Unit,
+    onNewChatClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .padding(vertical = 16.dp)
+    ) {
+        // 顶部标题
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "历史记录",
+                style = ZiZipTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = Grey900
+            )
+            IconButton(onClick = onNewChatClick) {
+                Icon(
+                    Icons.Outlined.Add,
+                    contentDescription = "新建对话",
+                    tint = Grey700
+                )
+            }
+        }
+        
+        HorizontalDivider(color = Grey150)
+        
+        // 历史记录列表
+        if (historyList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "暂无对话记录",
+                    style = ZiZipTypography.bodyMedium,
+                    color = Grey400
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(historyList) { conversation ->
+                    HistoryItem(
+                        conversation = conversation,
+                        onClick = { onHistoryItemClick(conversation.id) }
+                    )
+                }
+            }
+        }
+        
+        HorizontalDivider(color = Grey150)
+        
+        // 底部设置入口
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSettingsClick() }
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.Settings,
+                contentDescription = "设置",
+                tint = Grey600,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                "设置",
+                style = ZiZipTypography.bodyLarge,
+                color = Grey700
+            )
+        }
+    }
+}
+
+/**
+ * 历史记录项
+ */
+@Composable
+private fun HistoryItem(
+    conversation: com.autoglm.android.data.model.ConversationSummary,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Outlined.ChatBubbleOutline,
+            contentDescription = null,
+            tint = Grey500,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                conversation.title,
+                style = ZiZipTypography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = Grey800,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                conversation.lastMessage,
+                style = ZiZipTypography.labelSmall,
+                color = Grey500,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
  * 顶部导航栏
  */
 @Composable
 private fun HeaderBar(
     currentModel: com.autoglm.android.data.model.ModelConfig?,
-    onHistoryClick: () -> Unit,
+    onMenuClick: () -> Unit,
     onModelSelectorClick: () -> Unit,
     onNewChatClick: () -> Unit,
-    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(Grey100)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(44.dp)
+            .background(PrimaryWhite)
+            .padding(horizontal = 8.dp, vertical = 8.dp)
+            .height(48.dp)
     ) {
-        // 左侧 - 历史记录
+        // 左侧 - 菜单按钮（汉堡菜单）
         IconButton(
-            onClick = onHistoryClick,
+            onClick = onMenuClick,
             modifier = Modifier.align(Alignment.CenterStart)
         ) {
             Icon(
-                imageVector = Icons.Outlined.History,
-                contentDescription = "历史记录",
+                imageVector = Icons.Default.Menu,
+                contentDescription = "菜单",
                 tint = Grey700
             )
         }
         
-        // 中间 - 模型选择器
+        // 中间 - 模型选择器（居中）
         ModelSelectorButton(
             currentModel = currentModel,
             onClick = onModelSelectorClick,
             modifier = Modifier.align(Alignment.Center)
         )
         
-        // 右侧 - 新对话 + 设置
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        // 右侧 - 新建对话按钮
+        IconButton(
+            onClick = onNewChatClick,
+            modifier = Modifier.align(Alignment.CenterEnd)
         ) {
-            IconButton(onClick = onNewChatClick) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = "新对话",
-                    tint = Grey700
-                )
-            }
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = "设置",
-                    tint = Grey700
-                )
-            }
+            Icon(
+                imageVector = Icons.Outlined.Edit,  // 使用编辑图标代替加号
+                contentDescription = "新对话",
+                tint = Grey700
+            )
         }
     }
 }
@@ -225,7 +388,7 @@ private fun EmptyState(
         Text(
             text = greeting,
             style = ZiZipTypography.headlineMedium.copy(
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Light
+                fontWeight = FontWeight.Light
             ),
             color = Grey700,
             textAlign = TextAlign.Center
@@ -264,7 +427,7 @@ private fun AgentBanner(
             .fillMaxWidth()
             .clickable { onClick() },
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Grey50)
+        colors = CardDefaults.cardColors(containerColor = PrimaryWhite)
     ) {
         Row(
             modifier = Modifier
@@ -287,7 +450,7 @@ private fun AgentBanner(
                 Text(
                     text = statusText,
                     style = ZiZipTypography.bodyMedium.copy(
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold
                     ),
                     color = Grey900
                 )
@@ -357,7 +520,7 @@ private fun ChatItemView(
 }
 
 /**
- * 底部输入栏
+ * 底部输入栏 - 白色背景，工具区和输入框一起
  */
 @Composable
 private fun InputBar(
@@ -371,13 +534,14 @@ private fun InputBar(
 ) {
     val hasText = text.isNotBlank()
     
+    // 整个输入区域容器
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Grey100)
-            .padding(16.dp)
+            .background(PrimaryWhite)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // 输入框
+        // 输入框 - 无分割线，浅灰背景
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
@@ -385,18 +549,22 @@ private fun InputBar(
             enabled = isEnabled,
             placeholder = {
                 Text(
-                    text = if (!isEnabled) "处理中..." else "输入消息...",
-                    color = Grey400
+                    text = if (!isEnabled) "处理中..." else "给 ZiZip 发消息...",
+                    color = Grey400,
+                    style = ZiZipTypography.bodyMedium
                 )
             },
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Grey200,
-                unfocusedBorderColor = Grey200,
-                focusedContainerColor = Grey100,
-                unfocusedContainerColor = Grey100
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                disabledBorderColor = Color.Transparent,
+                focusedContainerColor = Grey50,
+                unfocusedContainerColor = Grey50,
+                disabledContainerColor = Grey100
             ),
-            maxLines = 4
+            maxLines = 4,
+            textStyle = ZiZipTypography.bodyMedium
         )
         
         Spacer(modifier = Modifier.height(12.dp))
@@ -408,25 +576,29 @@ private fun InputBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 左侧工具
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(
                     onClick = { /* TODO: 添加图片 */ },
-                    enabled = isEnabled
+                    enabled = isEnabled,
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Image,
                         contentDescription = "添加图片",
-                        tint = if (isEnabled) Grey700 else Grey400
+                        tint = if (isEnabled) Grey600 else Grey400,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
                 IconButton(
                     onClick = { /* TODO: 工具选择 */ },
-                    enabled = isEnabled
+                    enabled = isEnabled,
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Handyman,
                         contentDescription = "工具",
-                        tint = if (isEnabled) Grey700 else Grey400
+                        tint = if (isEnabled) Grey600 else Grey400,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -434,7 +606,7 @@ private fun InputBar(
             // 发送/停止按钮
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(
                         when {

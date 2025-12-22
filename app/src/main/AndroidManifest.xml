@@ -2,14 +2,32 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 网络权限 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
+    <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.INTERNET" />
+    
+    <!-- 悬浮窗权限 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    
+    <!-- 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- 电池优化白名单 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    
+    <!-- 开机自启动 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    
+    <!-- 震动权限 -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    
+    <!-- 使用统计权限（获取当前前台应用） -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
 
     <application
@@ -22,7 +40,17 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ZiZip"
+        android:usesCleartextTraffic="true"
         tools:targetApi="31">
+        
+        <!-- Shizuku Provider -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         
         <activity
             android:name=".MainActivity"
@@ -34,10 +62,12 @@
             </intent-filter>
         </activity>
 
+        <!-- 无障碍服务 -->
         <service
             android:name=".service.accessibility.AutoGLMAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
@@ -46,12 +76,36 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- 悬浮窗服务 -->
         <service android:name=".service.overlay.OverlayService" 
                  android:exported="false"
                  android:foregroundServiceType="specialUse">
-                 <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+                 <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" 
+                           android:value="overlay_control" />
+        </service>
+        
+        <!-- ZiZip 内置输入法 -->
+        <service
+            android:name=".service.ime.ZiZipInputMethod"
+            android:label="ZiZip 输入法"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/ime_config" />
         </service>
 
     </application>
+    
+    <!-- Query packages -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+    </queries>
 
 </manifest>

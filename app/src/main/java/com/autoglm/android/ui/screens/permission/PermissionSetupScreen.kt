@@ -30,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.autoglm.android.service.accessibility.AutoGLMAccessibilityService
+import com.autoglm.android.service.ime.ZiZipInputMethod
+import com.autoglm.android.core.shizuku.ShizukuAuthorizer
 import com.autoglm.android.ui.theme.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -43,7 +45,8 @@ enum class PermissionType {
     OVERLAY,
     BATTERY_OPTIMIZATION,
     NOTIFICATION,
-    SHIZUKU
+    SHIZUKU,
+    INPUT_METHOD
 }
 
 /**
@@ -109,10 +112,18 @@ fun PermissionSetupScreen(
             PermissionState(
                 type = PermissionType.SHIZUKU,
                 title = "Shizuku 授权",
-                description = "提供高级系统操作能力（可选）",
+                description = "Agent 模式需要 ADB 权限执行操作",
                 icon = Icons.Outlined.AdminPanelSettings,
-                isRequired = false,
+                isRequired = true,
                 isGranted = isShizukuGranted()
+            ),
+            PermissionState(
+                type = PermissionType.INPUT_METHOD,
+                title = "ZiZip 输入法",
+                description = "Agent 模式用于输入中文文本",
+                icon = Icons.Outlined.Keyboard,
+                isRequired = true,
+                isGranted = ZiZipInputMethod.isEnabled(context)
             )
         )
     }
@@ -444,9 +455,11 @@ private fun areNotificationsEnabled(context: Context): Boolean {
 }
 
 private fun isShizukuGranted(): Boolean {
-    // Shizuku 需要额外的库支持，这里暂时返回 false
-    // 实际实现需要添加 Shizuku 依赖
-    return false
+    return try {
+        ShizukuAuthorizer.hasShizukuPermission()
+    } catch (e: Exception) {
+        false
+    }
 }
 
 private fun requestPermission(context: Context, type: PermissionType) {
@@ -486,25 +499,40 @@ private fun requestPermission(context: Context, type: PermissionType) {
             }
         }
         PermissionType.SHIZUKU -> {
-            // 打开 Shizuku 应用或应用商店
-            try {
-                val intent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
-                if (intent != null) {
-                    context.startActivity(intent)
+            // 检查 Shizuku 是否安装
+            if (ShizukuAuthorizer.isShizukuInstalled(context)) {
+                // 已安装，检查服务是否运行
+                if (ShizukuAuthorizer.isShizukuServiceRunning()) {
+                    // 服务运行中，请求权限
+                    ShizukuAuthorizer.requestShizukuPermission { granted ->
+                        // 权限请求完成后会自动刷新
+                    }
                 } else {
-                    // 打开应用商店
+                    // 服务未运行，打开 Shizuku 应用
+                    val intent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                    if (intent != null) {
+                        context.startActivity(intent)
+                    }
+                }
+            } else {
+                // 未安装，引导安装
+                try {
                     val marketIntent = Intent(Intent.ACTION_VIEW).apply {
                         data = Uri.parse("market://details?id=moe.shizuku.privileged.api")
                     }
                     context.startActivity(marketIntent)
+                } catch (e: Exception) {
+                    val webIntent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse("https://shizuku.rikka.app/")
+                    }
+                    context.startActivity(webIntent)
                 }
-            } catch (e: Exception) {
-                // 打开网页
-                val webIntent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("https://shizuku.rikka.app/")
-                }
-                context.startActivity(webIntent)
             }
+        }
+        PermissionType.INPUT_METHOD -> {
+            // 打开输入法设置
+            val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
+            context.startActivity(intent)
         }
     }
 }

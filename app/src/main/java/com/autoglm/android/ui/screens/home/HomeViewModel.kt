@@ -9,6 +9,7 @@ import com.autoglm.android.data.repository.ModelConfigRepository
 import com.autoglm.android.data.repository.SettingsRepository
 import com.autoglm.android.domain.model.MockModelProvider
 import com.autoglm.android.domain.model.ModelProvider
+import com.autoglm.android.ui.components.ToolType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +27,9 @@ data class ChatItem(
     val actionType: String? = null,
     val isSuccess: Boolean = true,
     val execution: TaskExecution? = null,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val toolUsed: ToolType? = null,
+    val attachedImages: List<String> = emptyList()
 )
 
 /**
@@ -41,7 +44,9 @@ data class HomeUiState(
     val currentSessionId: String? = null,
     val errorMessage: String? = null,
     val language: String = "zh",
-    val agentModeEnabled: Boolean = false
+    val agentModeEnabled: Boolean = false,
+    val selectedTool: ToolType = ToolType.NONE,
+    val attachedImages: List<String> = emptyList()
 )
 
 /**
@@ -81,102 +86,139 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         modelRepo.setActiveModel(modelId)
     }
     
-    /**
-     * 发送消息
-     */
+    fun selectTool(tool: ToolType) {
+        _uiState.value = _uiState.value.copy(selectedTool = tool)
+    }
+    
+    fun addImage(uri: String) {
+        val currentImages = _uiState.value.attachedImages
+        if (currentImages.size < 5) {
+            _uiState.value = _uiState.value.copy(
+                attachedImages = currentImages + uri
+            )
+        }
+    }
+    
+    fun removeImage(index: Int) {
+        val currentImages = _uiState.value.attachedImages.toMutableList()
+        if (index in currentImages.indices) {
+            currentImages.removeAt(index)
+            _uiState.value = _uiState.value.copy(attachedImages = currentImages)
+        }
+    }
+    
+    fun clearImages() {
+        _uiState.value = _uiState.value.copy(attachedImages = emptyList())
+    }
+    
     fun sendMessage(content: String) {
-        if (content.isBlank()) return
+        if (content.isBlank() && _uiState.value.attachedImages.isEmpty()) return
+        
+        val selectedTool = _uiState.value.selectedTool
+        val attachedImages = _uiState.value.attachedImages.toList()
         
         viewModelScope.launch {
-            // 添加用户消息
-            val userItem = ChatItem(isUser = true, message = content)
+            val userItem = ChatItem(
+                isUser = true, 
+                message = content,
+                toolUsed = if (selectedTool != ToolType.NONE) selectedTool else null,
+                attachedImages = attachedImages
+            )
             addChatItem(userItem)
+            clearImages()
             
-            // 添加加载状态
             val loadingId = UUID.randomUUID().toString()
             addChatItem(ChatItem(id = loadingId, isUser = false, isLoading = true))
             
             _uiState.value = _uiState.value.copy(isChatRunning = true)
             
             try {
-                // 调用模型
-                val response = modelProvider.processQuery(content)
+                val response = when (selectedTool) {
+                    ToolType.AGENT -> modelProvider.processQuery("$content [AGENT_MODE]")
+                    ToolType.BUILD_APP -> modelProvider.processQuery("$content [BUILD_APP_MODE]")
+                    ToolType.CANVAS -> modelProvider.processQuery("$content [CANVAS_MODE]")
+                    ToolType.NONE -> modelProvider.processQuery(content)
+                }
                 
-                // 移除加载状态，添加响应
                 removeChatItem(loadingId)
                 
-                val assistantItem = ChatItem(
-                    isUser = false,
-                    message = response.message,
-                    thinking = response.thinking,
-                    actionType = response.action?.actionName,
-                    isSuccess = true
-                )
-                addChatItem(assistantItem)
-                
-                // 如果是 Agent 模式且有动作
-                if (_uiState.value.agentModeEnabled && response.action != null) {
-                    // 创建任务执行
-                    val execution = TaskExecution(
-                        taskDescription = content,
-                        status = TaskStatus.RUNNING
-                    )
-                    _uiState.value = _uiState.value.copy(currentExecution = execution)
-                    
-                    // 添加任务执行卡片
-                    val taskItem = ChatItem(
-                        isUser = false,
-                        execution = execution
-                    )
-                    addChatItem(taskItem)
+                when (selectedTool) {
+                    ToolType.AGENT -> {
+                        val execution = TaskExecution(
+                            taskDescription = content,
+                            status = TaskStatus.RUNNING
+                        )
+                        _uiState.value = _uiState.value.copy(currentExecution = execution)
+                        
+                        addChatItem(ChatItem(
+                            isUser = false,
+                            execution = execution,
+                            message = "正在执行任务...",
+                            toolUsed = ToolType.AGENT
+                        ))
+                    }
+                    ToolType.BUILD_APP -> {
+                        addChatItem(ChatItem(
+                            isUser = false,
+                            message = "🚀 正在生成应用代码...\n\n${response.message ?: "代码生成完成！"}",
+                            toolUsed = ToolType.BUILD_APP,
+                            isSuccess = true
+                        ))
+                    }
+                    ToolType.CANVAS -> {
+                        addChatItem(ChatItem(
+                            isUser = false,
+                            message = "🎨 Canvas 画布已创建\n\n${response.message ?: "您可以开始编辑了。"}",
+                            toolUsed = ToolType.CANVAS,
+                            isSuccess = true
+                        ))
+                    }
+                    ToolType.NONE -> {
+                        addChatItem(ChatItem(
+                            isUser = false,
+                            message = response.message,
+                            thinking = response.thinking,
+                            actionType = response.action?.actionName,
+                            isSuccess = true
+                        ))
+                    }
                 }
                 
             } catch (e: Exception) {
                 removeChatItem(loadingId)
-                val errorItem = ChatItem(
+                addChatItem(ChatItem(
                     isUser = false,
                     message = "发生错误: ${e.message}",
                     isSuccess = false
-                )
-                addChatItem(errorItem)
+                ))
             } finally {
                 _uiState.value = _uiState.value.copy(isChatRunning = false)
             }
         }
     }
     
-    /**
-     * 开始新对话
-     */
     fun startNewConversation() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 chatItems = emptyList(),
                 currentSessionId = null,
-                currentExecution = null
+                currentExecution = null,
+                selectedTool = ToolType.NONE,
+                attachedImages = emptyList()
             )
         }
     }
     
-    /**
-     * 暂停任务
-     */
     fun pauseTask() {
         val execution = _uiState.value.currentExecution ?: return
         updateExecution(execution.copyWith(status = TaskStatus.PAUSED))
     }
     
-    /**
-     * 继续任务
-     */
     fun resumeTask() {
         val execution = _uiState.value.currentExecution ?: return
         updateExecution(execution.copyWith(status = TaskStatus.RUNNING))
     }
     
-    /**
-     * 停止任务
-     */
     fun stopTask() {
         val execution = _uiState.value.currentExecution ?: return
         updateExecution(execution.copyWith(
@@ -201,7 +243,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateExecution(execution: TaskExecution) {
         _uiState.value = _uiState.value.copy(currentExecution = execution)
         
-        // 更新聊天列表中的任务卡片
         val updatedItems = _uiState.value.chatItems.map { item ->
             if (item.execution?.taskId == execution.taskId) {
                 item.copy(execution = execution)
@@ -212,9 +253,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(chatItems = updatedItems)
     }
     
-    /**
-     * 获取问候语
-     */
     fun getGreeting(): String {
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val nickname = settingsRepo.getNickname() ?: "there"

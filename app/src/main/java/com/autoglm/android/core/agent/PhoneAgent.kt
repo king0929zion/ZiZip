@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.autoglm.android.core.shizuku.AndroidShellExecutor
 import com.autoglm.android.core.shizuku.ShizukuAuthorizer
+import com.autoglm.android.data.model.StepRecord
 import com.autoglm.android.data.model.TaskExecution
 import com.autoglm.android.data.model.TaskStatus
 import com.autoglm.android.data.repository.SettingsRepository
@@ -140,7 +141,7 @@ class PhoneAgent(
                     }
                     
                     // 记录步骤
-                    val step = AgentStep(
+                    val step = StepRecord(
                         stepNumber = stepCount,
                         thinking = stepResult.thinking,
                         action = action.toString(),
@@ -329,14 +330,3 @@ class PhoneAgent(
         _execution.value = _execution.value?.update()
     }
 }
-
-/**
- * Agent 步骤记录
- */
-data class AgentStep(
-    val stepNumber: Int,
-    val thinking: String,
-    val action: String,
-    val success: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
-)

@@ -358,14 +358,14 @@ private fun HeaderBar(
             modifier = Modifier.align(Alignment.Center)
         )
         
-        // 右侧 - 更多按钮（三个点）
+        // 右侧 - 新建对话按钮
         IconButton(
             onClick = onNewChatClick,
             modifier = Modifier.align(Alignment.CenterEnd)
         ) {
             Icon(
-                imageVector = Icons.Default.MoreVert,  // 三个点菜单
-                contentDescription = "更多",
+                imageVector = Icons.Outlined.Edit,  // 新建对话图标
+                contentDescription = "新对话",
                 tint = Grey700
             )
         }

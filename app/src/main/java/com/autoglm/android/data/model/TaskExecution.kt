@@ -29,6 +29,17 @@ data class ActionRecord(
 )
 
 /**
+ * Agent 步骤记录
+ */
+data class StepRecord(
+    val stepNumber: Int,
+    val thinking: String = "",
+    val action: String = "",
+    val success: Boolean = true,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
  * 任务执行数据类 - 用于 Agent 模式
  */
 data class TaskExecution(
@@ -36,12 +47,14 @@ data class TaskExecution(
     val taskDescription: String,
     val status: TaskStatus = TaskStatus.PENDING,
     val actions: List<ActionRecord> = emptyList(),
+    val steps: List<StepRecord> = emptyList(),
+    val currentStep: Int = 0,
     val startTime: Long = System.currentTimeMillis(),
     val endTime: Long? = null,
     val errorMessage: String? = null
 ) {
-    val currentStep: Int
-        get() = actions.size
+    val stepCount: Int
+        get() = steps.size
     
     val duration: Long
         get() = (endTime ?: System.currentTimeMillis()) - startTime
@@ -67,6 +80,8 @@ data class TaskExecution(
     fun copyWith(
         status: TaskStatus? = null,
         actions: List<ActionRecord>? = null,
+        steps: List<StepRecord>? = null,
+        currentStep: Int? = null,
         endTime: Long? = null,
         errorMessage: String? = null
     ): TaskExecution = TaskExecution(
@@ -74,6 +89,8 @@ data class TaskExecution(
         taskDescription = this.taskDescription,
         status = status ?: this.status,
         actions = actions ?: this.actions,
+        steps = steps ?: this.steps,
+        currentStep = currentStep ?: this.currentStep,
         startTime = this.startTime,
         endTime = endTime ?: this.endTime,
         errorMessage = errorMessage ?: this.errorMessage

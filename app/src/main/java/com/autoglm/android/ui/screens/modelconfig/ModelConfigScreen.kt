@@ -14,18 +14,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.autoglm.android.data.model.ModelConfig
-import com.autoglm.android.data.model.ModelProviderType
+import com.autoglm.android.data.model.*
 import com.autoglm.android.data.repository.ModelConfigRepository
 import com.autoglm.android.ui.theme.*
 import java.util.UUID
 
 /**
- * 模型配置页面
+ * 模型配置页面 - 参考 rikkahub 设计
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,11 +34,16 @@ fun ModelConfigScreen(
 ) {
     val context = LocalContext.current
     val repository = remember { ModelConfigRepository.getInstance(context) }
+    val providers by repository.providers.collectAsState()
     val models by repository.models.collectAsState()
-    val activeModelId by repository.activeModelId.collectAsState()
     
-    var showAddDialog by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(0) }
+    var showAddProviderDialog by remember { mutableStateOf(false) }
+    var showAddModelDialog by remember { mutableStateOf(false) }
+    var editingProvider by remember { mutableStateOf<ProviderConfig?>(null) }
     var editingModel by remember { mutableStateOf<ModelConfig?>(null) }
+    
+    val tabs = listOf("供应商", "模型")
     
     Scaffold(
         topBar = {
@@ -50,111 +55,102 @@ fun ModelConfigScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "添加模型")
+                    IconButton(onClick = {
+                        if (selectedTab == 0) showAddProviderDialog = true
+                        else showAddModelDialog = true
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = "添加")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Grey100
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Grey100)
             )
         },
         containerColor = Grey100
     ) { paddingValues ->
-        if (models.isEmpty()) {
-            // 空状态
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Tab 选择
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Grey100,
+                contentColor = PrimaryBlack
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Psychology,
-                        contentDescription = null,
-                        tint = Grey400,
-                        modifier = Modifier.size(64.dp)
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = { Text(title) }
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "暂无模型配置",
-                        style = ZiZipTypography.bodyLarge,
-                        color = Grey400
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "点击右上角 + 添加模型",
-                        style = ZiZipTypography.labelSmall,
-                        color = Grey400
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = { showAddDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Accent
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("添加模型")
-                    }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(models, key = { it.id }) { model ->
-                    ModelConfigItem(
-                        model = model,
-                        isActive = model.id == activeModelId,
-                        onSetActive = { repository.setActiveModel(model.id) },
-                        onEdit = { editingModel = model },
-                        onDelete = { repository.deleteModel(model.id) },
-                        onToggleEnabled = {
-                            repository.updateModel(model.copy(enabled = !model.enabled))
-                        }
-                    )
-                }
+            
+            when (selectedTab) {
+                0 -> ProviderList(
+                    providers = providers,
+                    onToggleEnabled = { provider ->
+                        repository.updateProvider(provider.copy(enabled = !provider.enabled))
+                    },
+                    onEdit = { editingProvider = it },
+                    onDelete = { repository.deleteProvider(it.id) }
+                )
+                1 -> ModelList(
+                    models = models,
+                    onToggleEnabled = { model ->
+                        repository.updateModel(model.copy(enabled = !model.enabled))
+                    },
+                    onEdit = { editingModel = it },
+                    onDelete = { repository.deleteModel(it.id) }
+                )
             }
         }
     }
     
-    // 添加模型对话框
-    if (showAddDialog) {
-        AddModelDialog(
-            onDismiss = { showAddDialog = false },
-            onConfirm = { displayName, modelName, apiKey, baseUrl, providerType ->
-                val newModel = ModelConfig(
-                    id = UUID.randomUUID().toString(),
-                    displayName = displayName,
-                    modelName = modelName,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl,
-                    providerType = providerType,
-                    enabled = true
-                )
-                repository.addModel(newModel)
-                showAddDialog = false
+    // 添加供应商对话框
+    if (showAddProviderDialog) {
+        AddProviderDialog(
+            onDismiss = { showAddProviderDialog = false },
+            onConfirm = { provider ->
+                repository.addProvider(provider)
+                showAddProviderDialog = false
             }
         )
     }
     
-    // 编辑模型对话框
+    // 添加模型对话框
+    if (showAddModelDialog) {
+        AddModelDialog(
+            providers = providers.filter { it.enabled },
+            onDismiss = { showAddModelDialog = false },
+            onConfirm = { model ->
+                repository.addModel(model)
+                showAddModelDialog = false
+            }
+        )
+    }
+    
+    // 编辑供应商
+    editingProvider?.let { provider ->
+        EditProviderDialog(
+            provider = provider,
+            onDismiss = { editingProvider = null },
+            onConfirm = { updated ->
+                repository.updateProvider(updated)
+                editingProvider = null
+            }
+        )
+    }
+    
+    // 编辑模型
     editingModel?.let { model ->
         EditModelDialog(
             model = model,
+            providers = providers.filter { it.enabled },
             onDismiss = { editingModel = null },
-            onConfirm = { updatedModel ->
-                repository.updateModel(updatedModel)
+            onConfirm = { updated ->
+                repository.updateModel(updated)
                 editingModel = null
             }
         )
@@ -162,79 +158,133 @@ fun ModelConfigScreen(
 }
 
 @Composable
-private fun ModelConfigItem(
-    model: ModelConfig,
-    isActive: Boolean,
-    onSetActive: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+private fun ProviderList(
+    providers: List<ProviderConfig>,
+    onToggleEnabled: (ProviderConfig) -> Unit,
+    onEdit: (ProviderConfig) -> Unit,
+    onDelete: (ProviderConfig) -> Unit
+) {
+    if (providers.isEmpty()) {
+        EmptyState(
+            icon = Icons.Outlined.Cloud,
+            title = "暂无 API 供应商",
+            subtitle = "点击右上角 + 添加供应商"
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 内置供应商
+            item {
+                Text(
+                    text = "内置供应商",
+                    style = ZiZipTypography.labelMedium,
+                    color = Grey400,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                )
+            }
+            
+            items(providers.filter { it.builtIn }, key = { it.id }) { provider ->
+                ProviderCard(
+                    provider = provider,
+                    onToggleEnabled = { onToggleEnabled(provider) },
+                    onEdit = { onEdit(provider) },
+                    onDelete = null // 内置的不能删除
+                )
+            }
+            
+            // 自定义供应商
+            val customProviders = providers.filter { !it.builtIn }
+            if (customProviders.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "自定义供应商",
+                        style = ZiZipTypography.labelMedium,
+                        color = Grey400,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                    )
+                }
+                
+                items(customProviders, key = { it.id }) { provider ->
+                    ProviderCard(
+                        provider = provider,
+                        onToggleEnabled = { onToggleEnabled(provider) },
+                        onEdit = { onEdit(provider) },
+                        onDelete = { onDelete(provider) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderCard(
+    provider: ProviderConfig,
     onToggleEnabled: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isActive) Accent.copy(alpha = 0.1f) else PrimaryWhite
+            containerColor = if (provider.enabled) PrimaryWhite else Grey100
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 // 图标
                 Box(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (isActive) Accent.copy(alpha = 0.2f) else Grey100),
+                        .background(if (provider.enabled) Accent.copy(alpha = 0.1f) else Grey150),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.SmartToy,
+                        imageVector = Icons.Outlined.Cloud,
                         contentDescription = null,
-                        tint = if (isActive) Accent else Grey700,
+                        tint = if (provider.enabled) Accent else Grey400,
                         modifier = Modifier.size(22.dp)
                     )
                 }
                 
                 Spacer(modifier = Modifier.width(12.dp))
                 
-                // 信息
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = model.displayName,
+                            text = provider.name,
                             style = ZiZipTypography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = Grey900
+                            color = if (provider.enabled) Grey900 else Grey400
                         )
-                        if (isActive) {
+                        if (provider.builtIn) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "当前",
+                                text = "内置",
                                 style = ZiZipTypography.labelSmall,
-                                color = Accent,
+                                color = Grey400,
                                 modifier = Modifier
-                                    .background(Accent.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .background(Grey100, RoundedCornerShape(4.dp))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                     }
                     Text(
-                        text = model.modelName,
+                        text = provider.type.displayName,
                         style = ZiZipTypography.labelSmall,
                         color = Grey400
                     )
                 }
                 
-                // 开关
                 Switch(
-                    checked = model.enabled,
+                    checked = provider.enabled,
                     onCheckedChange = { onToggleEnabled() },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = PrimaryWhite,
@@ -245,81 +295,250 @@ private fun ModelConfigItem(
                 )
             }
             
+            if (provider.enabled && provider.apiKey.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Key,
+                        contentDescription = null,
+                        tint = SuccessColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "API Key 已配置",
+                        style = ZiZipTypography.labelSmall,
+                        color = SuccessColor
+                    )
+                }
+            }
+            
             Spacer(modifier = Modifier.height(12.dp))
             
-            // 操作按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                if (!isActive && model.enabled) {
-                    TextButton(onClick = onSetActive) {
-                        Text("设为当前", color = Accent)
+                TextButton(onClick = onEdit) {
+                    Text("配置", color = Accent)
+                }
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text("删除", color = ErrorColor)
                     }
                 }
-                TextButton(onClick = onEdit) {
-                    Text("编辑", color = Grey700)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelList(
+    models: List<ModelConfig>,
+    onToggleEnabled: (ModelConfig) -> Unit,
+    onEdit: (ModelConfig) -> Unit,
+    onDelete: (ModelConfig) -> Unit
+) {
+    if (models.isEmpty()) {
+        EmptyState(
+            icon = Icons.Outlined.Psychology,
+            title = "暂无模型配置",
+            subtitle = "点击右上角 + 添加模型"
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 按用途分组
+            ModelPurpose.values().forEach { purpose ->
+                val purposeModels = models.filter { it.purpose == purpose }
+                if (purposeModels.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = purpose.displayName,
+                            style = ZiZipTypography.labelMedium,
+                            color = Grey400,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp, top = 8.dp)
+                        )
+                    }
+                    
+                    items(purposeModels, key = { it.id }) { model ->
+                        ModelCard(
+                            model = model,
+                            onToggleEnabled = { onToggleEnabled(model) },
+                            onEdit = { onEdit(model) },
+                            onDelete = { onDelete(model) }
+                        )
+                    }
                 }
-                TextButton(onClick = { showDeleteConfirm = true }) {
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelCard(
+    model: ModelConfig,
+    onToggleEnabled: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val purposeColor = when (model.purpose) {
+        ModelPurpose.CHAT -> Color(0xFF3B82F6)
+        ModelPurpose.AGENT -> SuccessColor
+        ModelPurpose.OCR -> Color(0xFFF59E0B)
+        ModelPurpose.EMBEDDING -> Color(0xFF8B5CF6)
+    }
+    
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (model.enabled) PrimaryWhite else Grey100
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(purposeColor.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = when (model.purpose) {
+                            ModelPurpose.CHAT -> Icons.Outlined.Chat
+                            ModelPurpose.AGENT -> Icons.Outlined.SmartToy
+                            ModelPurpose.OCR -> Icons.Outlined.Image
+                            ModelPurpose.EMBEDDING -> Icons.Outlined.DataObject
+                        },
+                        contentDescription = null,
+                        tint = if (model.enabled) purposeColor else Grey400,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = model.displayName,
+                        style = ZiZipTypography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (model.enabled) Grey900 else Grey400
+                    )
+                    Text(
+                        text = "${model.providerType.displayName} · ${model.modelName}",
+                        style = ZiZipTypography.labelSmall,
+                        color = Grey400
+                    )
+                }
+                
+                Switch(
+                    checked = model.enabled,
+                    onCheckedChange = { onToggleEnabled() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = PrimaryWhite,
+                        checkedTrackColor = purposeColor,
+                        uncheckedThumbColor = PrimaryWhite,
+                        uncheckedTrackColor = Grey200
+                    )
+                )
+            }
+            
+            // 能力标签
+            if (model.abilities.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    model.abilities.take(3).forEach { ability ->
+                        Text(
+                            text = ability.displayName,
+                            style = ZiZipTypography.labelSmall,
+                            color = purposeColor,
+                            modifier = Modifier
+                                .background(purposeColor.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onEdit) {
+                    Text("编辑", color = Accent)
+                }
+                TextButton(onClick = onDelete) {
                     Text("删除", color = ErrorColor)
                 }
             }
         }
     }
-    
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除模型") },
-            text = { Text("确定要删除「${model.displayName}」吗？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete()
-                    showDeleteConfirm = false
-                }) {
-                    Text("删除", color = ErrorColor)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("取消")
-                }
-            }
-        )
+}
+
+@Composable
+private fun EmptyState(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Grey400,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = title, style = ZiZipTypography.bodyLarge, color = Grey400)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = subtitle, style = ZiZipTypography.labelSmall, color = Grey400)
+        }
     }
 }
 
+// ==================== 对话框 ====================
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddModelDialog(
+private fun AddProviderDialog(
     onDismiss: () -> Unit,
-    onConfirm: (displayName: String, modelName: String, apiKey: String, baseUrl: String, providerType: ModelProviderType) -> Unit
+    onConfirm: (ProviderConfig) -> Unit
 ) {
-    var displayName by remember { mutableStateOf("") }
-    var modelName by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
     var baseUrl by remember { mutableStateOf("") }
-    var providerType by remember { mutableStateOf(ModelProviderType.OPENAI_COMPATIBLE) }
+    var apiKey by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf(ModelProviderType.OPENAI_COMPATIBLE) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加模型") },
+        title = { Text("添加 API 供应商") },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    value = displayName,
-                    onValueChange = { displayName = it },
-                    label = { Text("显示名称") },
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    value = modelName,
-                    onValueChange = { modelName = it },
-                    label = { Text("模型名称") },
-                    placeholder = { Text("如 gpt-4, claude-3") },
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text("Base URL") },
+                    placeholder = { Text("https://api.example.com/v1") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -330,21 +549,148 @@ private fun AddModelDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank() && baseUrl.isNotBlank()) {
+                        onConfirm(ProviderConfig(
+                            name = name,
+                            type = selectedType,
+                            baseUrl = baseUrl,
+                            apiKey = apiKey,
+                            builtIn = false,
+                            enabled = true
+                        ))
+                    }
+                },
+                enabled = name.isNotBlank() && baseUrl.isNotBlank()
+            ) {
+                Text("添加")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditProviderDialog(
+    provider: ProviderConfig,
+    onDismiss: () -> Unit,
+    onConfirm: (ProviderConfig) -> Unit
+) {
+    var name by remember { mutableStateOf(provider.name) }
+    var baseUrl by remember { mutableStateOf(provider.baseUrl) }
+    var apiKey by remember { mutableStateOf(provider.apiKey) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("配置 ${provider.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!provider.builtIn) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("Base URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = { Text("Base URL（可选）") },
-                    placeholder = { Text("https://api.openai.com/v1") },
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("API Key") },
+                    placeholder = { Text("输入你的 API Key") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
+            Button(onClick = {
+                onConfirm(provider.copy(
+                    name = if (provider.builtIn) provider.name else name,
+                    baseUrl = if (provider.builtIn) provider.baseUrl else baseUrl,
+                    apiKey = apiKey
+                ))
+            }) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddModelDialog(
+    providers: List<ProviderConfig>,
+    onDismiss: () -> Unit,
+    onConfirm: (ModelConfig) -> Unit
+) {
+    var displayName by remember { mutableStateOf("") }
+    var modelName by remember { mutableStateOf("") }
+    var selectedProvider by remember { mutableStateOf(providers.firstOrNull()?.type ?: ModelProviderType.OPENAI_COMPATIBLE) }
+    var selectedPurpose by remember { mutableStateOf(ModelPurpose.CHAT) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("添加模型") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("显示名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = { Text("模型 ID") },
+                    placeholder = { Text("如 gpt-4, claude-3") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Text("模型用途", style = ZiZipTypography.labelMedium, color = Grey700)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ModelPurpose.values().take(3).forEach { purpose ->
+                        FilterChip(
+                            selected = selectedPurpose == purpose,
+                            onClick = { selectedPurpose = purpose },
+                            label = { Text(purpose.displayName) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
             Button(
                 onClick = {
                     if (displayName.isNotBlank() && modelName.isNotBlank()) {
-                        onConfirm(displayName, modelName, apiKey, baseUrl, providerType)
+                        onConfirm(ModelConfig(
+                            displayName = displayName,
+                            modelName = modelName,
+                            providerType = selectedProvider,
+                            purpose = selectedPurpose,
+                            enabled = true
+                        ))
                     }
                 },
                 enabled = displayName.isNotBlank() && modelName.isNotBlank()
@@ -353,9 +699,7 @@ private fun AddModelDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }
@@ -364,21 +708,21 @@ private fun AddModelDialog(
 @Composable
 private fun EditModelDialog(
     model: ModelConfig,
+    providers: List<ProviderConfig>,
     onDismiss: () -> Unit,
     onConfirm: (ModelConfig) -> Unit
 ) {
     var displayName by remember { mutableStateOf(model.displayName) }
     var modelName by remember { mutableStateOf(model.modelName) }
-    var apiKey by remember { mutableStateOf(model.apiKey) }
-    var baseUrl by remember { mutableStateOf(model.baseUrl) }
+    var temperature by remember { mutableStateOf(model.temperature.toString()) }
+    var maxTokens by remember { mutableStateOf(model.maxTokens.toString()) }
+    var systemPrompt by remember { mutableStateOf(model.systemPrompt) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("编辑模型") },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
@@ -389,47 +733,50 @@ private fun EditModelDialog(
                 OutlinedTextField(
                     value = modelName,
                     onValueChange = { modelName = it },
-                    label = { Text("模型名称") },
+                    label = { Text("模型 ID") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = temperature,
+                        onValueChange = { temperature = it },
+                        label = { Text("Temperature") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = maxTokens,
+                        onValueChange = { maxTokens = it },
+                        label = { Text("Max Tokens") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("API Key") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = { Text("Base URL（可选）") },
-                    singleLine = true,
+                    value = systemPrompt,
+                    onValueChange = { systemPrompt = it },
+                    label = { Text("系统提示词") },
+                    minLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (displayName.isNotBlank() && modelName.isNotBlank()) {
-                        onConfirm(model.copy(
-                            displayName = displayName,
-                            modelName = modelName,
-                            apiKey = apiKey,
-                            baseUrl = baseUrl
-                        ))
-                    }
-                },
-                enabled = displayName.isNotBlank() && modelName.isNotBlank()
-            ) {
+            Button(onClick = {
+                onConfirm(model.copy(
+                    displayName = displayName,
+                    modelName = modelName,
+                    temperature = temperature.toFloatOrNull() ?: 0.7f,
+                    maxTokens = maxTokens.toIntOrNull() ?: 4096,
+                    systemPrompt = systemPrompt
+                ))
+            }) {
                 Text("保存")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }

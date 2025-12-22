@@ -178,7 +178,7 @@ private fun ProviderFilter(
     onConfigureApiKey: (ProviderConfig) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(
+    androidx.compose.foundation.lazy.LazyRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
@@ -220,22 +220,6 @@ private fun ProviderFilter(
                 )
             )
         }
-    }
-}
-
-@Composable
-private fun LazyRow(
-    modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
-    content: @Composable () -> Unit
-) {
-    androidx.compose.foundation.lazy.LazyRow(
-        modifier = modifier,
-        contentPadding = contentPadding,
-        horizontalArrangement = horizontalArrangement
-    ) {
-        item { content() }
     }
 }
 

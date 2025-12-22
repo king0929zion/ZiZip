@@ -3,6 +3,8 @@ package com.autoglm.android.ui.screens.home
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.autoglm.android.core.agent.AutoGLMApiClient
+import com.autoglm.android.core.agent.PhoneAgent
 import com.autoglm.android.data.model.*
 import com.autoglm.android.data.repository.HistoryRepository
 import com.autoglm.android.data.repository.ModelConfigRepository
@@ -59,6 +61,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val historyRepo = HistoryRepository.getInstance(application)
     
     private val modelProvider: ModelProvider = MockModelProvider()
+    
+    // Agent 相关
+    private val apiClient = AutoGLMApiClient(settingsRepo)
+    private val phoneAgent = PhoneAgent(application, apiClient)
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -173,18 +179,43 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 
                 when (selectedTool) {
                     ToolType.AGENT -> {
-                        val execution = TaskExecution(
-                            taskDescription = content,
-                            status = TaskStatus.RUNNING
-                        )
-                        _uiState.value = _uiState.value.copy(currentExecution = execution)
-                        
+                        // 使用真正的 PhoneAgent 执行任务
                         addChatItem(ChatItem(
                             isUser = false,
-                            execution = execution,
-                            message = "正在执行任务...",
+                            message = "正在启动 Agent 执行任务...",
                             toolUsed = ToolType.AGENT
                         ))
+                        
+                        // 异步执行 Agent 任务
+                        launch {
+                            try {
+                                val execution = phoneAgent.runTask(content)
+                                _uiState.value = _uiState.value.copy(currentExecution = execution)
+                                
+                                // 根据执行结果添加消息
+                                val statusMessage = when (execution.status) {
+                                    TaskStatus.COMPLETED -> "✅ 任务执行完成！"
+                                    TaskStatus.FAILED -> "❌ 任务执行失败: ${execution.errorMessage ?: "未知错误"}"
+                                    TaskStatus.CANCELLED -> "⏹ 任务已取消"
+                                    else -> "任务状态: ${execution.status}"
+                                }
+                                
+                                addChatItem(ChatItem(
+                                    isUser = false,
+                                    execution = execution,
+                                    message = statusMessage,
+                                    toolUsed = ToolType.AGENT,
+                                    isSuccess = execution.status == TaskStatus.COMPLETED
+                                ))
+                            } catch (e: Exception) {
+                                addChatItem(ChatItem(
+                                    isUser = false,
+                                    message = "❌ Agent 执行出错: ${e.message}",
+                                    toolUsed = ToolType.AGENT,
+                                    isSuccess = false
+                                ))
+                            }
+                        }
                     }
                     ToolType.BUILD_APP -> {
                         addChatItem(ChatItem(
@@ -239,16 +270,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun pauseTask() {
+        phoneAgent.pause()
         val execution = _uiState.value.currentExecution ?: return
         updateExecution(execution.copyWith(status = TaskStatus.PAUSED))
     }
     
     fun resumeTask() {
+        phoneAgent.resume()
         val execution = _uiState.value.currentExecution ?: return
         updateExecution(execution.copyWith(status = TaskStatus.RUNNING))
     }
     
     fun stopTask() {
+        phoneAgent.stop()
         val execution = _uiState.value.currentExecution ?: return
         updateExecution(execution.copyWith(
             status = TaskStatus.CANCELLED,

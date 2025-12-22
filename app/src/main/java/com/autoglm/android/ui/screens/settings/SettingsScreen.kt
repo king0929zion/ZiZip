@@ -92,6 +92,15 @@ fun SettingsScreen(
             SectionHeader(title = "模型配置")
             SettingsCard {
                 NavigationTile(
+                    icon = Icons.Outlined.Tune,
+                    title = "模型管理",
+                    description = "搜索、启用和配置模型",
+                    onClick = { navController.navigate(Screen.ModelManage.route) }
+                )
+                
+                HorizontalDivider(color = Grey150)
+                
+                NavigationTile(
                     icon = Icons.Outlined.SmartToy,
                     title = "对话模型",
                     description = "配置主要对话 AI 模型",

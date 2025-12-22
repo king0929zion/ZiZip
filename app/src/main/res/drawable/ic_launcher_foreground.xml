@@ -4,18 +4,20 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:scaleX="0.35"
-        android:scaleY="0.35"
-        android:translateX="35"
-        android:translateY="35">
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,27L81,54L54,81L27,54Z"/>
-        <path
-            android:fillColor="#3D3A35"
-            android:pathData="M54,35L73,54L54,73L35,54Z"/>
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,43L65,54L54,65L43,54Z"/>
-    </group>
+    
+    <!-- 外圈白色圆形 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24 C70.569,24 84,37.431 84,54 C84,70.569 70.569,84 54,84 C37.431,84 24,70.569 24,54 C24,37.431 37.431,24 54,24 Z"/>
+    
+    <!-- 内圈棕色圆形 -->
+    <path
+        android:fillColor="#3D3A35"
+        android:pathData="M54,32 C66.150,32 76,41.850 76,54 C76,66.150 66.150,76 54,76 C41.850,76 32,66.150 32,54 C32,41.850 41.850,32 54,32 Z"/>
+    
+    <!-- Z 字母 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43,42 L65,42 L65,46 L50,46 L65,66 L65,70 L43,70 L43,66 L58,66 L43,46 Z"/>
+    
 </vector>

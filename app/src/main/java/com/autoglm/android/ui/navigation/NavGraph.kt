@@ -9,6 +9,7 @@ import com.autoglm.android.ui.screens.settings.SettingsScreen
 import com.autoglm.android.ui.screens.history.HistoryScreen
 import com.autoglm.android.ui.screens.permission.PermissionSetupScreen
 import com.autoglm.android.ui.screens.modelconfig.ModelConfigScreen
+import com.autoglm.android.ui.screens.model.ModelManageScreen
 import com.autoglm.android.ui.screens.providerconfig.ProviderConfigScreen
 import com.autoglm.android.ui.screens.autoglmconfig.AutoGLMConfigScreen
 
@@ -52,6 +53,11 @@ fun ZiZipNavGraph(
         // 模型配置页面（旧版，可保留作兼容）
         composable(Screen.ModelConfig.route) {
             ModelConfigScreen(navController = navController)
+        }
+        
+        // 模型管理页面（新版）
+        composable(Screen.ModelManage.route) {
+            ModelManageScreen(navController = navController)
         }
         
         // 供应商配置页面

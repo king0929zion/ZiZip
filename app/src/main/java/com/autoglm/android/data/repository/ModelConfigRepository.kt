@@ -177,6 +177,11 @@ class ModelConfigRepository private constructor(private val context: Context) {
         updateModel(model.copy(enabled = enabled))
     }
     
+    fun toggleModelEnabled(modelId: String) {
+        val model = _models.value.find { it.id == modelId } ?: return
+        updateModel(model.copy(enabled = !model.enabled))
+    }
+    
     // ================== JSON 序列化 ==================
     
     private fun saveProviders(providers: List<ProviderConfig>) {

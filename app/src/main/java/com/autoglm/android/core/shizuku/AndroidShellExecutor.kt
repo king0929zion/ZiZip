@@ -4,10 +4,6 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuRemoteProcess
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 /**
  * Android Shell 命令执行器
@@ -67,12 +63,16 @@ object AndroidShellExecutor {
     }
 
     private fun executeShizukuCommand(command: String): CommandResult {
-        var process: ShizukuRemoteProcess? = null
+        var process: Process? = null
         try {
-            process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
+            // 使用 Runtime.exec 并依赖 Shizuku 的 shell 权限
+            // Shizuku 授权后，应用可以执行需要 shell 权限的命令
+            val processBuilder = ProcessBuilder("sh", "-c", command)
+            processBuilder.redirectErrorStream(false)
+            process = processBuilder.start()
             
-            val outputReader = BufferedReader(InputStreamReader(process.inputStream))
-            val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+            val outputReader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+            val errorReader = java.io.BufferedReader(java.io.InputStreamReader(process.errorStream))
             
             val output = StringBuilder()
             val error = StringBuilder()

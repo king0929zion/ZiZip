@@ -1,12 +1,12 @@
 package com.autoglm.android.ui.screens.model
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -170,6 +170,7 @@ private fun SearchBar(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderFilter(
     providers: List<ProviderConfig>,
@@ -178,26 +179,26 @@ private fun ProviderFilter(
     onConfigureApiKey: (ProviderConfig) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    androidx.compose.foundation.lazy.LazyRow(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+            .padding(vertical = 8.dp)
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            FilterChip(
-                selected = selectedProviderId == null,
-                onClick = { onProviderSelected(null) },
-                label = { Text("全部") },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Accent,
-                    selectedLabelColor = PrimaryWhite
-                )
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        FilterChip(
+            selected = selectedProviderId == null,
+            onClick = { onProviderSelected(null) },
+            label = { Text("全部") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = Accent,
+                selectedLabelColor = PrimaryWhite
             )
-        }
-        items(providers.size) { index ->
-            val provider = providers[index]
+        )
+        
+        providers.forEach { provider ->
             FilterChip(
                 selected = selectedProviderId == provider.type.name,
                 onClick = { onProviderSelected(provider.type.name) },
@@ -220,6 +221,8 @@ private fun ProviderFilter(
                 )
             )
         }
+        
+        Spacer(modifier = Modifier.width(8.dp))
     }
 }
 
@@ -388,6 +391,7 @@ private fun ApiKeyDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddModelDialog(
     providers: List<ProviderConfig>,

@@ -33,7 +33,7 @@ import com.autoglm.android.service.accessibility.AutoGLMAccessibilityService
 import com.autoglm.android.ui.theme.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
 
 /**
  * 权限类型

@@ -119,6 +119,20 @@ fun PermissionSetupScreen(
         checkPermissions()
     }
     
+    // 监听应用恢复时自动刷新权限状态
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                checkPermissions()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    
     // 计算权限统计
     val requiredCount = permissions.count { it.isRequired }
     val grantedRequiredCount = permissions.count { it.isRequired && it.isGranted }

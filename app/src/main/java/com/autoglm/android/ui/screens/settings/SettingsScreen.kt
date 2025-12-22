@@ -88,30 +88,13 @@ fun SettingsScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Agent 模式
-            SectionHeader(title = "Agent 模式")
-            SettingsCard {
-                SwitchTile(
-                    icon = Icons.Outlined.SmartToy,
-                    title = "启用 Agent 模式",
-                    description = "允许 AI 在虚拟屏幕中执行自动化任务",
-                    isChecked = agentModeEnabled,
-                    onCheckedChange = {
-                        agentModeEnabled = it
-                        settingsRepo.setAgentModeEnabled(it)
-                    }
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
             // 模型配置
             SectionHeader(title = "模型配置")
             SettingsCard {
                 NavigationTile(
-                    icon = Icons.Outlined.Tune,
-                    title = "模型管理",
-                    description = "添加、编辑或删除 AI 模型配置",
+                    icon = Icons.Outlined.SmartToy,
+                    title = "对话模型",
+                    description = "配置主要对话 AI 模型",
                     onClick = { navController.navigate(Screen.ModelConfig.route) }
                 )
                 
@@ -119,8 +102,17 @@ fun SettingsScreen(
                 
                 NavigationTile(
                     icon = Icons.Outlined.Psychology,
-                    title = "AutoGLM 配置",
-                    description = "配置 AutoGLM Agent 参数",
+                    title = "Agent 模型",
+                    description = "配置自动化任务执行模型",
+                    onClick = { navController.navigate(Screen.ModelConfig.route) }
+                )
+                
+                HorizontalDivider(color = Grey150)
+                
+                NavigationTile(
+                    icon = Icons.Outlined.Image,
+                    title = "OCR 识图模型",
+                    description = "配置图片文字识别模型",
                     onClick = { navController.navigate(Screen.ModelConfig.route) }
                 )
             }

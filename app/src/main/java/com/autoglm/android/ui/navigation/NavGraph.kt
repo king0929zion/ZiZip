@@ -7,6 +7,8 @@ import androidx.navigation.compose.composable
 import com.autoglm.android.ui.screens.home.HomeScreen
 import com.autoglm.android.ui.screens.settings.SettingsScreen
 import com.autoglm.android.ui.screens.history.HistoryScreen
+import com.autoglm.android.ui.screens.permission.PermissionSetupScreen
+import com.autoglm.android.ui.screens.modelconfig.ModelConfigScreen
 
 /**
  * 应用导航图
@@ -40,14 +42,14 @@ fun ZiZipNavGraph(
             HomeScreen(navController = navController)
         }
         
-        // TODO: 权限设置页面
+        // 权限设置页面
         composable(Screen.PermissionSetup.route) {
-            // PermissionSetupScreen(navController = navController)
+            PermissionSetupScreen(navController = navController)
         }
         
-        // TODO: 模型配置页面
+        // 模型配置页面
         composable(Screen.ModelConfig.route) {
-            // ModelConfigScreen(navController = navController)
+            ModelConfigScreen(navController = navController)
         }
     }
 }

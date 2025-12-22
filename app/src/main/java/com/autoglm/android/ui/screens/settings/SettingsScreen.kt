@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.autoglm.android.data.repository.SettingsRepository
 import com.autoglm.android.service.accessibility.AutoGLMAccessibilityService
+import com.autoglm.android.ui.navigation.Screen
 import com.autoglm.android.ui.theme.*
 
 /**
@@ -75,35 +76,13 @@ fun SettingsScreen(
             // 权限设置
             SectionHeader(title = "权限设置")
             SettingsCard {
-                // 无障碍服务
-                PermissionTile(
-                    icon = Icons.Outlined.Accessibility,
-                    title = "无障碍服务",
-                    description = if (accessibilityEnabled) "已启用" else "未启用",
-                    isEnabled = accessibilityEnabled,
-                    onClick = {
-                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        context.startActivity(intent)
-                    }
-                )
-                
-                HorizontalDivider(color = Grey150)
-                
-                // 悬浮窗权限
-                PermissionTile(
-                    icon = Icons.Outlined.Layers,
-                    title = "悬浮窗权限",
-                    description = if (overlayPermissionGranted) "已授权" else "未授权",
-                    isEnabled = overlayPermissionGranted,
-                    onClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            context.startActivity(intent)
-                        }
-                    }
+                // 权限配置入口
+                NavigationTile(
+                    icon = Icons.Outlined.Security,
+                    title = "权限配置",
+                    description = if (accessibilityEnabled && overlayPermissionGranted) 
+                        "所有必需权限已授权" else "需要配置权限",
+                    onClick = { navController.navigate(Screen.PermissionSetup.route) }
                 )
             }
             
@@ -133,7 +112,7 @@ fun SettingsScreen(
                     icon = Icons.Outlined.Tune,
                     title = "模型管理",
                     description = "添加、编辑或删除 AI 模型配置",
-                    onClick = { /* TODO: 导航到模型配置页面 */ }
+                    onClick = { navController.navigate(Screen.ModelConfig.route) }
                 )
                 
                 HorizontalDivider(color = Grey150)
@@ -142,7 +121,7 @@ fun SettingsScreen(
                     icon = Icons.Outlined.Psychology,
                     title = "AutoGLM 配置",
                     description = "配置 AutoGLM Agent 参数",
-                    onClick = { /* TODO: 导航到 AutoGLM 配置页面 */ }
+                    onClick = { navController.navigate(Screen.ModelConfig.route) }
                 )
             }
             

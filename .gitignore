@@ -5,7 +5,6 @@
 # Gradle
 .gradle/
 local.properties
-gradle.properties
 
 # Android Studio
 *.iml

@@ -1,0 +1,21 @@
+# Built files
+/build
+/app/build
+
+# Gradle
+.gradle/
+local.properties
+gradle.properties
+
+# Android Studio
+*.iml
+.idea/
+*.log
+
+# Keystore (sensitive - use secrets)
+*.keystore
+*.jks
+
+# OS files
+.DS_Store
+Thumbs.db

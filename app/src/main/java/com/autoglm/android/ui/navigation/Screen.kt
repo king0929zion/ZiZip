@@ -1,0 +1,10 @@
+package com.autoglm.android.ui.navigation
+
+sealed class Screen(val route: String) {
+    object Home : Screen("home")
+    object Chat : Screen("chat")
+    object Settings : Screen("settings")
+    object History : Screen("history")
+    object PermissionSetup : Screen("permission_setup")
+    object ModelConfig : Screen("model_config")
+}

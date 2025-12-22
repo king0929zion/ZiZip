@@ -1,0 +1,353 @@
+package com.autoglm.android.ui.screens.settings
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.autoglm.android.data.repository.SettingsRepository
+import com.autoglm.android.service.accessibility.AutoGLMAccessibilityService
+import com.autoglm.android.ui.theme.*
+
+/**
+ * 设置页面
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    navController: NavController
+) {
+    val context = LocalContext.current
+    val settingsRepo = remember { SettingsRepository.getInstance(context) }
+    
+    var agentModeEnabled by remember { mutableStateOf(settingsRepo.isAgentModeEnabled()) }
+    var accessibilityEnabled by remember { mutableStateOf(false) }
+    var overlayPermissionGranted by remember { mutableStateOf(false) }
+    
+    // 检查权限状态
+    LaunchedEffect(Unit) {
+        accessibilityEnabled = AutoGLMAccessibilityService.instance != null
+        overlayPermissionGranted = Settings.canDrawOverlays(context)
+    }
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("设置", style = ZiZipTypography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Grey100
+                )
+            )
+        },
+        containerColor = Grey100
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // 权限设置
+            SectionHeader(title = "权限设置")
+            SettingsCard {
+                // 无障碍服务
+                PermissionTile(
+                    icon = Icons.Outlined.Accessibility,
+                    title = "无障碍服务",
+                    description = if (accessibilityEnabled) "已启用" else "未启用",
+                    isEnabled = accessibilityEnabled,
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                )
+                
+                HorizontalDivider(color = Grey150)
+                
+                // 悬浮窗权限
+                PermissionTile(
+                    icon = Icons.Outlined.Layers,
+                    title = "悬浮窗权限",
+                    description = if (overlayPermissionGranted) "已授权" else "未授权",
+                    isEnabled = overlayPermissionGranted,
+                    onClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(intent)
+                        }
+                    }
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Agent 模式
+            SectionHeader(title = "Agent 模式")
+            SettingsCard {
+                SwitchTile(
+                    icon = Icons.Outlined.SmartToy,
+                    title = "启用 Agent 模式",
+                    description = "允许 AI 在虚拟屏幕中执行自动化任务",
+                    isChecked = agentModeEnabled,
+                    onCheckedChange = {
+                        agentModeEnabled = it
+                        settingsRepo.setAgentModeEnabled(it)
+                    }
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // 模型配置
+            SectionHeader(title = "模型配置")
+            SettingsCard {
+                NavigationTile(
+                    icon = Icons.Outlined.Tune,
+                    title = "模型管理",
+                    description = "添加、编辑或删除 AI 模型配置",
+                    onClick = { /* TODO: 导航到模型配置页面 */ }
+                )
+                
+                HorizontalDivider(color = Grey150)
+                
+                NavigationTile(
+                    icon = Icons.Outlined.Psychology,
+                    title = "AutoGLM 配置",
+                    description = "配置 AutoGLM Agent 参数",
+                    onClick = { /* TODO: 导航到 AutoGLM 配置页面 */ }
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // 关于
+            SectionHeader(title = "关于")
+            SettingsCard {
+                NavigationTile(
+                    icon = Icons.Outlined.Info,
+                    title = "关于 ZiZip",
+                    description = "版本 1.0.0",
+                    onClick = { /* TODO: 显示关于信息 */ }
+                )
+                
+                HorizontalDivider(color = Grey150)
+                
+                NavigationTile(
+                    icon = Icons.Outlined.Code,
+                    title = "GitHub",
+                    description = "查看源代码",
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            data = Uri.parse("https://github.com")
+                        }
+                        context.startActivity(intent)
+                    }
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = title,
+        style = ZiZipTypography.labelSmall.copy(
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+        ),
+        color = Grey400,
+        modifier = modifier.padding(start = 4.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingsCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = PrimaryWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun PermissionTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    isEnabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isEnabled) SuccessColor else Grey400,
+            modifier = Modifier.size(24.dp)
+        )
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = ZiZipTypography.bodyLarge,
+                color = Grey900
+            )
+            Text(
+                text = description,
+                style = ZiZipTypography.labelSmall,
+                color = if (isEnabled) SuccessColor else Grey400
+            )
+        }
+        
+        Icon(
+            imageVector = if (isEnabled) Icons.Default.CheckCircle else Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = if (isEnabled) SuccessColor else Grey400,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun SwitchTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    isChecked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!isChecked) }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isChecked) Accent else Grey400,
+            modifier = Modifier.size(24.dp)
+        )
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = ZiZipTypography.bodyLarge,
+                color = Grey900
+            )
+            Text(
+                text = description,
+                style = ZiZipTypography.labelSmall,
+                color = Grey400
+            )
+        }
+        
+        Switch(
+            checked = isChecked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = PrimaryWhite,
+                checkedTrackColor = Accent,
+                uncheckedThumbColor = PrimaryWhite,
+                uncheckedTrackColor = Grey200
+            )
+        )
+    }
+}
+
+@Composable
+private fun NavigationTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Grey700,
+            modifier = Modifier.size(24.dp)
+        )
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = ZiZipTypography.bodyLarge,
+                color = Grey900
+            )
+            Text(
+                text = description,
+                style = ZiZipTypography.labelSmall,
+                color = Grey400
+            )
+        }
+        
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = Grey400,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}

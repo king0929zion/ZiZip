@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">ZiZip</string>
+    <string name="accessibility_service_description">ZiZip Accessibility Service allows the AI agent to interact with other apps on your behalf.</string>
+</resources>

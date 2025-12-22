@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.autoglm.android.service.accessibility.AutoGLMAccessibilityService
 import com.autoglm.android.ui.theme.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
  * 权限类型
@@ -120,10 +123,10 @@ fun PermissionSetupScreen(
     }
     
     // 监听应用恢复时自动刷新权限状态
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
                 checkPermissions()
             }
         }

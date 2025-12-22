@@ -33,6 +33,9 @@ class AutoGLMAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                     // 内容变化，可用于监听页面加载完成
                 }
+                else -> {
+                    // 其他事件类型
+                }
             }
         }
     }

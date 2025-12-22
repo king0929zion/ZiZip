@@ -18,6 +18,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.autoglm.android.ui.overlay.FloatingBall
+import com.autoglm.android.ui.overlay.OverlayContent
 import com.autoglm.android.ui.theme.ZiZipTheme
 
 class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {

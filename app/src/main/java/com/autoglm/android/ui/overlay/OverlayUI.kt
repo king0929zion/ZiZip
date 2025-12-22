@@ -5,9 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -104,15 +109,15 @@ fun TaskPanel(onCollapse: () -> Unit) {
     Box(
         modifier = Modifier
             .size(300.dp, 400.dp)
-            .background(PrimaryWhite, androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .background(PrimaryWhite, RoundedCornerShape(16.dp))
             .padding(16.dp)
     ) {
-        androidx.compose.foundation.layout.Column {
+        Column {
             Text("ZiZip Active", style = ZiZipTypography.headlineMedium)
-            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
             Text("Processing screen content...", style = ZiZipTypography.bodyMedium)
-            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            androidx.compose.material3.Button(onClick = onCollapse) {
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onCollapse) {
                 Text("Minimize")
             }
         }

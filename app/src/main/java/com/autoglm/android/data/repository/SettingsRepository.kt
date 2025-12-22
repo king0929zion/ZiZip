@@ -79,6 +79,28 @@ class SettingsRepository private constructor(private val context: Context) {
         prefs.edit().putString(KEY_ACTIVE_MODEL_ID, modelId).apply()
     }
     
+    // ================== AutoGLM 配置 ==================
+    
+    fun getAutoGLMApiKey(): String = prefs.getString(KEY_AUTOGLM_API_KEY, "") ?: ""
+    
+    fun setAutoGLMApiKey(apiKey: String) {
+        prefs.edit().putString(KEY_AUTOGLM_API_KEY, apiKey).apply()
+    }
+    
+    fun getAutoGLMBaseUrl(): String = prefs.getString(KEY_AUTOGLM_BASE_URL, DEFAULT_AUTOGLM_BASE_URL) ?: DEFAULT_AUTOGLM_BASE_URL
+    
+    fun setAutoGLMBaseUrl(baseUrl: String) {
+        prefs.edit().putString(KEY_AUTOGLM_BASE_URL, baseUrl).apply()
+    }
+    
+    fun getAutoGLMModelName(): String = prefs.getString(KEY_AUTOGLM_MODEL_NAME, DEFAULT_AUTOGLM_MODEL_NAME) ?: DEFAULT_AUTOGLM_MODEL_NAME
+    
+    fun setAutoGLMModelName(modelName: String) {
+        prefs.edit().putString(KEY_AUTOGLM_MODEL_NAME, modelName).apply()
+    }
+    
+    fun isAutoGLMConfigured(): Boolean = getAutoGLMApiKey().isNotBlank()
+    
     companion object {
         private const val PREFS_NAME = "zizip_settings"
         
@@ -89,10 +111,15 @@ class SettingsRepository private constructor(private val context: Context) {
         private const val KEY_LANGUAGE = "language"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_ACTIVE_MODEL_ID = "active_model_id"
+        private const val KEY_AUTOGLM_API_KEY = "autoglm_api_key"
+        private const val KEY_AUTOGLM_BASE_URL = "autoglm_base_url"
+        private const val KEY_AUTOGLM_MODEL_NAME = "autoglm_model_name"
         
         // Defaults
         private const val DEFAULT_LANGUAGE = "zh"
         private const val DEFAULT_MAX_STEPS = 20
+        private const val DEFAULT_AUTOGLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+        private const val DEFAULT_AUTOGLM_MODEL_NAME = "autoglm-phone"
         
         @Volatile
         private var instance: SettingsRepository? = null

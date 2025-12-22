@@ -95,25 +95,16 @@ fun SettingsScreen(
                     icon = Icons.Outlined.SmartToy,
                     title = "对话模型",
                     description = "配置主要对话 AI 模型",
-                    onClick = { navController.navigate(Screen.ModelConfig.route) }
+                    onClick = { navController.navigate(Screen.ProviderConfig.route) }
                 )
                 
                 HorizontalDivider(color = Grey150)
                 
                 NavigationTile(
                     icon = Icons.Outlined.Psychology,
-                    title = "Agent 模型",
-                    description = "配置自动化任务执行模型",
-                    onClick = { navController.navigate(Screen.ModelConfig.route) }
-                )
-                
-                HorizontalDivider(color = Grey150)
-                
-                NavigationTile(
-                    icon = Icons.Outlined.Image,
-                    title = "OCR 识图模型",
-                    description = "配置图片文字识别模型",
-                    onClick = { navController.navigate(Screen.ModelConfig.route) }
+                    title = "AutoGLM 配置",
+                    description = "配置智谱 AutoGLM Agent",
+                    onClick = { navController.navigate(Screen.AutoGLMConfig.route) }
                 )
             }
             

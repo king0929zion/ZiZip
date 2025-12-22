@@ -7,4 +7,6 @@ sealed class Screen(val route: String) {
     object History : Screen("history")
     object PermissionSetup : Screen("permission_setup")
     object ModelConfig : Screen("model_config")
+    object ProviderConfig : Screen("provider_config")
+    object AutoGLMConfig : Screen("autoglm_config")
 }

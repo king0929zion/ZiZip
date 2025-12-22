@@ -68,7 +68,7 @@ fun HomeScreen(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = PrimaryWhite,
+                drawerContainerColor = Grey100,
                 modifier = Modifier.width(300.dp)
             ) {
                 HistoryDrawerContent(
@@ -92,9 +92,9 @@ fun HomeScreen(
         }
     ) {
         Scaffold(
-            containerColor = PrimaryWhite,  // 状态栏颜色与顶栏一致
+            containerColor = Grey100,  // 统一使用米白色背景
             topBar = {
-                // 顶部导航栏 - 使用白色背景
+                // 顶部导航栏 - 与对话区统一背景
                 HeaderBar(
                     currentModel = viewModel.getActiveModel(),
                     onMenuClick = { scope.launch { drawerState.open() } },
@@ -107,15 +107,14 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .background(PrimaryWhite)
+                    .background(Grey100)  // 统一背景色
             ) {
-                // 聊天区域 - 使用浅灰背景，底部有圆角
+                // 聊天区域 - 与顶栏统一颜色
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                        .background(Grey100)
+                        .background(Grey100)  // 统一背景色
                 ) {
                     if (uiState.chatItems.isEmpty()) {
                         // 空状态
@@ -159,7 +158,7 @@ fun HomeScreen(
                     }
                 }
                 
-                // 底部输入栏 - 白色背景
+                // 底部输入栏 - 有向下圆角，背景统一
                 InputBar(
                     text = inputText,
                     onTextChange = { inputText = it },
@@ -323,7 +322,7 @@ private fun HistoryItem(
 }
 
 /**
- * 顶部导航栏
+ * 顶部导航栏 - 与对话区统一米白色背景
  */
 @Composable
 private fun HeaderBar(
@@ -336,11 +335,11 @@ private fun HeaderBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(PrimaryWhite)
+            .background(Grey100)  // 与对话区统一
             .padding(horizontal = 8.dp, vertical = 8.dp)
             .height(48.dp)
     ) {
-        // 左侧 - 菜单按钮（汉堡菜单）
+        // 左侧 - 菜单按钮（汉堡菜单，横线样式）
         IconButton(
             onClick = onMenuClick,
             modifier = Modifier.align(Alignment.CenterStart)
@@ -359,14 +358,14 @@ private fun HeaderBar(
             modifier = Modifier.align(Alignment.Center)
         )
         
-        // 右侧 - 新建对话按钮
+        // 右侧 - 更多按钮（三个点）
         IconButton(
             onClick = onNewChatClick,
             modifier = Modifier.align(Alignment.CenterEnd)
         ) {
             Icon(
-                imageVector = Icons.Outlined.Edit,  // 使用编辑图标代替加号
-                contentDescription = "新对话",
+                imageVector = Icons.Default.MoreVert,  // 三个点菜单
+                contentDescription = "更多",
                 tint = Grey700
             )
         }
@@ -534,14 +533,15 @@ private fun InputBar(
 ) {
     val hasText = text.isNotBlank()
     
-    // 整个输入区域容器
+    // 整个输入区域容器 - 向下圆角
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(PrimaryWhite)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
-        // 输入框 - 无分割线，浅灰背景
+        // 输入框 - 一体化设计，无边框，透明背景
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
@@ -549,19 +549,19 @@ private fun InputBar(
             enabled = isEnabled,
             placeholder = {
                 Text(
-                    text = if (!isEnabled) "处理中..." else "给 ZiZip 发消息...",
+                    text = if (!isEnabled) "处理中..." else "Reply to Claude...",
                     color = Grey400,
                     style = ZiZipTypography.bodyMedium
                 )
             },
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color.Transparent,
                 unfocusedBorderColor = Color.Transparent,
                 disabledBorderColor = Color.Transparent,
-                focusedContainerColor = Grey50,
-                unfocusedContainerColor = Grey50,
-                disabledContainerColor = Grey100
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent
             ),
             maxLines = 4,
             textStyle = ZiZipTypography.bodyMedium

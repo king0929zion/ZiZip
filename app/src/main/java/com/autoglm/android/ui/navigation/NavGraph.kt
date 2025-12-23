@@ -2,16 +2,18 @@ package com.autoglm.android.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.autoglm.android.ui.screens.home.HomeScreen
 import com.autoglm.android.ui.screens.settings.SettingsScreen
 import com.autoglm.android.ui.screens.history.HistoryScreen
 import com.autoglm.android.ui.screens.permission.PermissionSetupScreen
-import com.autoglm.android.ui.screens.modelconfig.ModelConfigScreen
 import com.autoglm.android.ui.screens.model.ModelManageScreen
-import com.autoglm.android.ui.screens.providerconfig.ProviderConfigScreen
-import com.autoglm.android.ui.screens.autoglmconfig.AutoGLMConfigScreen
+import com.autoglm.android.ui.screens.model.ProviderConfigScreen
+import com.autoglm.android.ui.screens.model.ProviderDetailScreen
+import com.autoglm.android.ui.screens.model.AutoGLMConfigScreen
 
 /**
  * 应用导航图
@@ -50,19 +52,23 @@ fun ZiZipNavGraph(
             PermissionSetupScreen(navController = navController)
         }
         
-        // 模型配置页面（旧版，可保留作兼容）
-        composable(Screen.ModelConfig.route) {
-            ModelConfigScreen(navController = navController)
-        }
-        
-        // 模型管理页面（新版）
+        // 模型管理页面
         composable(Screen.ModelManage.route) {
             ModelManageScreen(navController = navController)
         }
         
-        // 供应商配置页面
+        // 供应商配置页面（模型配置主页）
         composable(Screen.ProviderConfig.route) {
             ProviderConfigScreen(navController = navController)
+        }
+        
+        // 供应商详情页面
+        composable(
+            route = "provider_detail/{providerType}",
+            arguments = listOf(navArgument("providerType") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val providerType = backStackEntry.arguments?.getString("providerType") ?: ""
+            ProviderDetailScreen(navController = navController, providerType = providerType)
         }
         
         // AutoGLM 配置页面
@@ -71,4 +77,3 @@ fun ZiZipNavGraph(
         }
     }
 }
-

@@ -182,6 +182,113 @@ class ModelConfigRepository private constructor(private val context: Context) {
         updateModel(model.copy(enabled = !model.enabled))
     }
     
+    // ================== 新增方法（复刻 Auto-GLM-Android）==================
+    
+    private val _selectedModelIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedModelIds: StateFlow<Set<String>> = _selectedModelIds.asStateFlow()
+    
+    suspend fun initialize() {
+        loadProviders()
+        loadModels()
+        loadSelectedModelIds()
+    }
+    
+    private fun loadSelectedModelIds() {
+        val json = prefs.getString(KEY_SELECTED_MODELS, null)
+        if (json != null) {
+            try {
+                val array = JSONArray(json)
+                val ids = mutableSetOf<String>()
+                for (i in 0 until array.length()) {
+                    ids.add(array.getString(i))
+                }
+                _selectedModelIds.value = ids
+            } catch (e: Exception) {
+                _selectedModelIds.value = emptySet()
+            }
+        }
+    }
+    
+    private fun saveSelectedModelIds() {
+        val array = JSONArray()
+        _selectedModelIds.value.forEach { array.put(it) }
+        prefs.edit().putString(KEY_SELECTED_MODELS, array.toString()).apply()
+    }
+    
+    suspend fun toggleModelSelection(modelId: String): Boolean {
+        val currentIds = _selectedModelIds.value.toMutableSet()
+        if (modelId in currentIds) {
+            currentIds.remove(modelId)
+            _selectedModelIds.value = currentIds
+            saveSelectedModelIds()
+            return true
+        } else {
+            if (currentIds.size >= MAX_SELECTED_MODELS) {
+                return false // 达到最大选择数量
+            }
+            currentIds.add(modelId)
+            _selectedModelIds.value = currentIds
+            saveSelectedModelIds()
+            return true
+        }
+    }
+    
+    suspend fun updateProviderApiKey(type: ModelProviderType, apiKey: String) {
+        val newList = _providers.value.map { provider ->
+            if (provider.type == type) {
+                provider.copy(apiKey = apiKey)
+            } else {
+                provider
+            }
+        }
+        saveProviders(newList)
+        _providers.value = newList
+    }
+    
+    suspend fun addCustomProvider(name: String, baseUrl: String) {
+        val provider = ProviderConfig(
+            name = name,
+            type = ModelProviderType.CUSTOM,
+            baseUrl = baseUrl,
+            builtIn = false
+        )
+        addProvider(provider)
+    }
+    
+    suspend fun fetchModelsFromApi(type: ModelProviderType) {
+        // TODO: 实现从 API 获取模型列表
+        // 这需要网络请求，暂时抛出异常
+        throw Exception("获取模型列表功能尚未实现，请手动添加模型")
+    }
+    
+    suspend fun addManualModel(providerType: ModelProviderType, modelId: String, displayName: String?) {
+        val model = ModelConfig(
+            displayName = displayName ?: modelId.substringAfterLast("/"),
+            modelName = modelId,
+            providerType = providerType
+        )
+        addModel(model)
+        
+        // 同时更新 provider 的模型列表
+        val newProviders = _providers.value.map { provider ->
+            if (provider.type == providerType) {
+                provider.copy(models = provider.models + model)
+            } else {
+                provider
+            }
+        }
+        saveProviders(newProviders)
+        _providers.value = newProviders
+    }
+    
+    suspend fun updateModel(modelId: String, newModelName: String, newDisplayName: String?) {
+        val model = _models.value.find { it.id == modelId } ?: return
+        val updatedModel = model.copy(
+            modelName = newModelName,
+            displayName = newDisplayName ?: newModelName.substringAfterLast("/")
+        )
+        updateModel(updatedModel)
+    }
     // ================== JSON 序列化 ==================
     
     private fun saveProviders(providers: List<ProviderConfig>) {
@@ -304,6 +411,9 @@ class ModelConfigRepository private constructor(private val context: Context) {
         private const val KEY_ACTIVE_CHAT_MODEL = "active_chat_model_id"
         private const val KEY_ACTIVE_AGENT_MODEL = "active_agent_model_id"
         private const val KEY_ACTIVE_OCR_MODEL = "active_ocr_model_id"
+        private const val KEY_SELECTED_MODELS = "selected_model_ids"
+        
+        const val MAX_SELECTED_MODELS = 5
         
         @Volatile
         private var instance: ModelConfigRepository? = null

@@ -146,7 +146,9 @@ data class ProviderConfig(
     val proxyEnabled: Boolean = false,
     val proxyHost: String = "",
     val proxyPort: Int = 8080
-)
+) {
+    val isBuiltIn: Boolean get() = builtIn || type.builtIn
+}
 
 /**
  * 默认供应商预设

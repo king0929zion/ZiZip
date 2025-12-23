@@ -18,6 +18,7 @@ import com.autoglm.android.ui.components.ShowerVideoView
 import com.autoglm.android.ui.components.TouchEvent
 import com.autoglm.android.ui.overlay.VirtualDisplayBorder
 import com.autoglm.android.ui.theme.*
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import android.util.Log
 
@@ -114,8 +115,8 @@ fun VirtualDisplayScreen(
                 isStreaming = isStreaming,
                 onTouchEvent = { event ->
                     // Convert normalized coordinates to pixel coordinates
-                    val screenWidth = videoWidth.takeIf { it > 0 } ?: 1080
-                    val screenHeight = videoHeight.takeIf { it > 0 } ?: 1920
+                    val screenWidth = videoWidth.takeIf { width -> width > 0 } ?: 1080
+                    val screenHeight = videoHeight.takeIf { height -> height > 0 } ?: 1920
 
                     val x = (event.x * screenWidth).toInt()
                     val y = (event.y * screenHeight).toInt()
@@ -171,16 +172,16 @@ fun VirtualDisplayScreen(
  */
 class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
     private val _isConnected = kotlinx.coroutines.flow.MutableStateFlow(false)
-    val isConnected = _isConnected.asStateFlow()
+    val isConnected: StateFlow<Boolean> = _isConnected
 
     private val _isStreaming = kotlinx.coroutines.flow.MutableStateFlow(false)
-    val isStreaming = _isStreaming.asStateFlow()
+    val isStreaming: StateFlow<Boolean> = _isStreaming
 
     private val _videoWidth = kotlinx.coroutines.flow.MutableStateFlow(1080)
-    val videoWidth = _videoWidth.asStateFlow()
+    val videoWidth: StateFlow<Int> = _videoWidth
 
     private val _videoHeight = kotlinx.coroutines.flow.MutableStateFlow(1920)
-    val videoHeight = _videoHeight.asStateFlow()
+    val videoHeight: StateFlow<Int> = _videoHeight
 
     private var showerController: com.autoglm.android.core.agent.ShowerController? = null
 

@@ -46,7 +46,8 @@ object ShowerVideoRenderer {
         Log.d(TAG, "Attaching to surface: ${width}x$height")
 
         try {
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, "dec")
+            // Create video format with width and height
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
             format.setInteger(MediaFormat.KEY_WIDTH, width)
             format.setInteger(MediaFormat.KEY_HEIGHT, height)
 
@@ -61,9 +62,14 @@ object ShowerVideoRenderer {
             // Create decoder
             decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             decoder?.setCallback(object : MediaCodec.Callback() {
+                override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+                    // Input buffer available - we don't use async mode for input
+                    // Frames are fed synchronously in onFrame()
+                }
+
                 override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
                     // Output buffer available (rendered frame)
-                    codec.releaseOutputBuffer(index, false)
+                    codec.releaseOutputBuffer(index, true)  // render = true
                 }
 
                 override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
@@ -107,19 +113,19 @@ object ShowerVideoRenderer {
                     Log.d(TAG, "Found SPS")
                     sps = data
                     csdBuffer.add(data)
-                    decoder!!.queueInputBuffer(index, 0, 0, 0)
+                    decoder!!.queueInputBuffer(index, 0, 0, 0, 0)
                     return
                 } else if (isPPS(data)) {
                     Log.d(TAG, "Found PPS")
                     pps = data
                     csdBuffer.add(data)
-                    decoder!!.queueInputBuffer(index, 0, 0, 0)
+                    decoder!!.queueInputBuffer(index, 0, 0, 0, 0)
                     return
                 }
 
                 // Feed video data
                 buffer.put(data)
-                decoder!!.queueInputBuffer(index, 0, data.size, System.nanoTime() / 1000)
+                decoder!!.queueInputBuffer(index, 0, data.size, System.nanoTime() / 1000, 0)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error processing frame", e)
@@ -205,7 +211,7 @@ object ShowerVideoRenderer {
      * 检查是否为 SPS (Sequence Parameter Set)
      */
     private fun isSPS(data: ByteArray): Boolean {
-        if (data.size < 4) return false
+        if (data.size < 5) return false
         // SPS NAL type is 0x67 (after start code)
         return data[0] == 0x00.toByte() && data[1] == 0x00.toByte() &&
                data[2] == 0x00.toByte() && data[3] == 0x01.toByte() &&
@@ -216,7 +222,7 @@ object ShowerVideoRenderer {
      * 检查是否为 PPS (Picture Parameter Set)
      */
     private fun isPPS(data: ByteArray): Boolean {
-        if (data.size < 4) return false
+        if (data.size < 5) return false
         // PPS NAL type is 0x68 (after start code)
         return data[0] == 0x00.toByte() && data[1] == 0x00.toByte() &&
                data[2] == 0x00.toByte() && data[3] == 0x01.toByte() &&

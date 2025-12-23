@@ -344,6 +344,8 @@ fun AutoGLMConfigScreen(
                                     disabledContainerColor = Grey100
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = coordinateSystem == system,
                                     borderColor = Grey200,
                                     selectedBorderColor = Accent
                                 )

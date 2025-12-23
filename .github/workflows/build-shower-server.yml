@@ -6,6 +6,7 @@ on:
     paths:
       - 'tools/**'
       - '.github/workflows/build-shower-server.yml'
+  workflow_call:
 
 jobs:
   build-shower-apk:
@@ -29,7 +30,7 @@ jobs:
       - name: Build Shower Server APK
         run: |
           cd tools
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon --max-workers=2
 
       - name: Copy APK to assets
         run: |

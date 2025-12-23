@@ -46,6 +46,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // Increase heap for DEX processing (GitHub Actions memory optimization)
+    dexOptions {
+        javaMaxHeapSize = "2048m"
+        preDexLibraries = true
+    }
+
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.4"
     }

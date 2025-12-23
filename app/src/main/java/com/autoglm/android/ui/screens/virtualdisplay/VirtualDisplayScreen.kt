@@ -428,15 +428,12 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
 
     suspend fun connect(context: Context) {
         try {
-            // Connect to Shower server (using singleton)
-            val connected = com.autoglm.android.core.agent.ShowerController.ensureConnected()
+            // 只检查连接状态，不主动连接（避免与 PhoneAgent 竞争）
+            val connected = com.autoglm.android.core.agent.ShowerController.isConnected()
             _isConnected.value = connected
 
             if (connected) {
-                // Create virtual display
-                com.autoglm.android.core.agent.ShowerController.ensureDisplay(1080, 1920, 320)
-
-                // Get video size
+                // Get video size from existing connection
                 val (width, height) = com.autoglm.android.core.agent.ShowerController.getVideoSize()
                 if (width > 0 && height > 0) {
                     _videoWidth.value = width
@@ -444,10 +441,10 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
                 }
 
                 // Video streaming status
-                _isStreaming.value = com.autoglm.android.core.agent.ShowerController.isConnected()
+                _isStreaming.value = true
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to connect to virtual display", e)
+            Log.e(TAG, "Failed to check virtual display status", e)
             _isConnected.value = false
         }
     }

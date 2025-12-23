@@ -151,7 +151,7 @@ object ShowerController {
         val existing = connectingDeferred
         if (existing != null) {
             return@withContext try {
-                withTimeout(2000L) {
+                withTimeout(5000L) {
                     existing.await()
                 }
             } catch (e: Exception) {
@@ -170,7 +170,7 @@ object ShowerController {
 
             webSocket = client.newWebSocket(request, listener)
 
-            withTimeout(2000L) {
+            withTimeout(5000L) {
                 deferred.await()
             }
         } catch (e: Exception) {

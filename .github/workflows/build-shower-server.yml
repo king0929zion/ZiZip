@@ -1,0 +1,48 @@
+name: Build Shower Server
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/**'
+      - '.github/workflows/build-shower-server.yml'
+
+jobs:
+  build-shower-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x tools/gradlew
+
+      - name: Build Shower Server APK
+        run: |
+          cd tools
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Copy APK to assets
+        run: |
+          mkdir -p app/src/main/assets
+          cp tools/app/build/outputs/apk/debug/app-debug.apk app/src/main/assets/shower-server.apk
+
+      - name: Show APK info
+        run: ls -la app/src/main/assets/shower-server.apk
+
+      - name: Commit APK
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/assets/shower-server.apk
+          git diff --staged --quiet || git commit -m "chore: update shower-server.apk [skip ci]"
+          git push

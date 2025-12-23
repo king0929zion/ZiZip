@@ -426,30 +426,25 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
     private val _zoomLevel = kotlinx.coroutines.flow.MutableStateFlow(1f)
     val zoomLevel: StateFlow<Float> = _zoomLevel
 
-    private var showerController: com.autoglm.android.core.agent.ShowerController? = null
-
     suspend fun connect(context: Context) {
-        val controller = com.autoglm.android.core.agent.ShowerController()
-        showerController = controller
-
         try {
-            // Connect to Shower server
-            val connected = controller.ensureConnected()
+            // Connect to Shower server (using singleton)
+            val connected = com.autoglm.android.core.agent.ShowerController.ensureConnected()
             _isConnected.value = connected
 
             if (connected) {
                 // Create virtual display
-                controller.ensureDisplay(1080, 1920, 320)
+                com.autoglm.android.core.agent.ShowerController.ensureDisplay(1080, 1920, 320)
 
                 // Get video size
-                val (width, height) = controller.getVideoSize()
+                val (width, height) = com.autoglm.android.core.agent.ShowerController.getVideoSize()
                 if (width > 0 && height > 0) {
                     _videoWidth.value = width
                     _videoHeight.value = height
                 }
 
                 // Video streaming status
-                _isStreaming.value = controller.isConnected()
+                _isStreaming.value = com.autoglm.android.core.agent.ShowerController.isConnected()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect to virtual display", e)
@@ -458,25 +453,22 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
     }
 
     fun disconnect() {
-        showerController?.shutdown()
-        showerController = null
+        // Note: Don't shutdown singleton ShowerController, just reset local state
         _isConnected.value = false
         _isStreaming.value = false
     }
 
     suspend fun handleTouchEvent(action: Int, x: Int, y: Int) {
-        val controller = showerController ?: return
-
         try {
             when (action) {
                 0 -> { // ACTION_DOWN
-                    controller.touchDown(x, y)
+                    com.autoglm.android.core.agent.ShowerController.touchDown(x, y)
                 }
                 1 -> { // ACTION_UP
-                    controller.touchUp(x, y)
+                    com.autoglm.android.core.agent.ShowerController.touchUp(x, y)
                 }
                 2 -> { // ACTION_MOVE
-                    controller.touchMove(x, y)
+                    com.autoglm.android.core.agent.ShowerController.touchMove(x, y)
                 }
             }
         } catch (e: Exception) {
@@ -485,7 +477,7 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
     }
 
     suspend fun captureScreenshot(): ByteArray? {
-        return showerController?.requestScreenshot(timeoutMs = 3000L)
+        return com.autoglm.android.core.agent.ShowerController.requestScreenshot(timeoutMs = 3000L)
     }
 
     fun rotateScreen() {

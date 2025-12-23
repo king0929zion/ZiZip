@@ -64,8 +64,7 @@ class PhoneAgent(
     private var currentJob: Job? = null
     private var isPaused = false
 
-    // Shower 虚拟屏幕支持
-    private val showerController = ShowerController()
+    // Shower 虚拟屏幕支持（ShowerController 是单例 object）
     private var isShowerAvailable = false
     
     /**
@@ -117,7 +116,7 @@ class PhoneAgent(
                 DebugLogger.d(TAG, "2. 创建虚拟显示器...")
                 val metrics = context.resources.displayMetrics
                 CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
-                val displayCreated = showerController.ensureDisplay(
+                val displayCreated = ShowerController.ensureDisplay(
                     metrics.widthPixels,
                     metrics.heightPixels,
                     metrics.densityDpi,
@@ -302,7 +301,7 @@ class PhoneAgent(
             setVirtualBorderVisible(false)
             // 关闭 Shower 连接
             try {
-                showerController.shutdown()
+                ShowerController.shutdown()
                 DebugLogger.d(TAG, "Shower 连接已关闭")
             } catch (e: Exception) {
                 DebugLogger.w(TAG, "关闭 Shower 连接失败", e)
@@ -369,7 +368,7 @@ class PhoneAgent(
         if (isShowerAvailable) {
             try {
                 DebugLogger.d(TAG, "使用 Shower 截图...")
-                val showerBytes = showerController.requestScreenshot(timeoutMs = 3000L)
+                val showerBytes = ShowerController.requestScreenshot(timeoutMs = 3000L)
                 if (showerBytes != null) {
                     File(path).writeBytes(showerBytes)
                     DebugLogger.i(TAG, "✓ Shower 截图成功: $path")
@@ -484,7 +483,7 @@ class PhoneAgent(
             is AgentAction.Launch -> {
                 // 如果 Shower 可用，通过 Shower 启动
                 if (isShowerAvailable) {
-                    showerController.launchApp(action.packageName)
+                    ShowerController.launchApp(action.packageName)
                 } else {
                     AndroidShellExecutor.launchApp(action.packageName)
                 }
@@ -498,7 +497,7 @@ class PhoneAgent(
                 }
                 // 如果 Shower 可用，通过 Shower 执行
                 if (isShowerAvailable) {
-                    showerController.tap(pixelX, pixelY)
+                    ShowerController.tap(pixelX, pixelY)
                 } else {
                     AndroidShellExecutor.tap(pixelX, pixelY)
                 }
@@ -521,21 +520,21 @@ class PhoneAgent(
                 }
                 // 如果 Shower 可用，通过 Shower 执行
                 if (isShowerAvailable) {
-                    showerController.swipe(sx, sy, ex, ey, action.duration.toLong())
+                    ShowerController.swipe(sx, sy, ex, ey, action.duration.toLong())
                 } else {
                     AndroidShellExecutor.swipe(sx, sy, ex, ey, action.duration)
                 }
             }
             is AgentAction.Back -> {
                 if (isShowerAvailable) {
-                    showerController.key(4) // KEYCODE_BACK
+                    ShowerController.key(4) // KEYCODE_BACK
                 } else {
                     AndroidShellExecutor.pressBack()
                 }
             }
             is AgentAction.Home -> {
                 if (isShowerAvailable) {
-                    showerController.key(3) // KEYCODE_HOME
+                    ShowerController.key(3) // KEYCODE_HOME
                 } else {
                     AndroidShellExecutor.pressHome()
                 }

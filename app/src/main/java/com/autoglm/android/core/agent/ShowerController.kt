@@ -6,6 +6,7 @@ import com.autoglm.android.core.debug.DebugLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.*
 import okio.ByteString
@@ -14,14 +15,17 @@ import java.util.concurrent.TimeUnit
 /**
  * Shower 虚拟屏幕控制器
  * 通过 WebSocket 与 Shower 服务器通信
+ *
+ * 参考 Operit 实现，修复了以下问题：
+ * 1. 连接超时和 Deferred 清理
+ * 2. 从日志中解析虚拟屏幕 ID
+ * 3. 截图请求的完整处理
+ * 4. 二进制视频帧处理
  */
-class ShowerController(
-    private val host: String = "127.0.0.1",
-    private val port: Int = 8986
-) {
-    companion object {
-        private const val TAG = "ShowerController"
-    }
+object ShowerController {
+    private const val TAG = "ShowerController"
+    private const val HOST = "127.0.0.1"
+    private const val PORT = 8986
 
     private val client = OkHttpClient.Builder()
         .readTimeout(5, TimeUnit.SECONDS)
@@ -49,6 +53,13 @@ class ShowerController(
     @Volatile
     private var connectingDeferred: CompletableDeferred<Boolean>? = null
 
+    @Volatile
+    private var binaryHandler: ((ByteArray) -> Unit)? = null
+
+    fun setBinaryHandler(handler: ((ByteArray) -> Unit)?) {
+        binaryHandler = handler
+    }
+
     fun getDisplayId(): Int? = virtualDisplayId
     fun getVideoSize(): Pair<Int, Int> = Pair(videoWidth, videoHeight)
     fun isConnected(): Boolean = connected
@@ -58,140 +69,200 @@ class ShowerController(
             DebugLogger.i(TAG, "WebSocket 连接成功")
             connected = true
             connectingDeferred?.complete(true)
+            connectingDeferred = null
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             DebugLogger.d(TAG, "WebSocket 关闭: $code $reason")
             connected = false
             this@ShowerController.webSocket = null
+            connectingDeferred?.complete(false)
+            connectingDeferred = null
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             DebugLogger.e(TAG, "WebSocket 连接失败: ${t.message}", t)
             connected = false
-            connectingDeferred?.complete(false)
             this@ShowerController.webSocket = null
+            // Fail any pending screenshot request
+            pendingScreenshot?.complete(null)
+            pendingScreenshot = null
+            connectingDeferred?.complete(false)
+            connectingDeferred = null
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            DebugLogger.d(TAG, "收到消息: ${text.take(100)}")
-            handleTextMessage(text)
+            // 首先处理截图响应（避免记录大量 Base64 数据）
+            if (text.startsWith("SCREENSHOT_DATA ")) {
+                val base64 = text.substring("SCREENSHOT_DATA ".length).trim()
+                try {
+                    val bytes = Base64.decode(base64, Base64.DEFAULT)
+                    DebugLogger.d(TAG, "收到截图 via WS, size=${bytes.size}")
+                    pendingScreenshot?.complete(bytes)
+                } catch (e: Exception) {
+                    DebugLogger.e(TAG, "解码 SCREENSHOT_DATA 失败", e)
+                    pendingScreenshot?.complete(null)
+                } finally {
+                    pendingScreenshot = null
+                }
+                return
+            } else if (text.startsWith("SCREENSHOT_ERROR")) {
+                DebugLogger.w(TAG, "收到 SCREENSHOT_ERROR: $text", null)
+                pendingScreenshot?.complete(null)
+                pendingScreenshot = null
+                return
+            }
+
+            DebugLogger.d(TAG, "WS 文本: $text")
+            // 从日志中解析虚拟屏幕 ID
+            val marker = "Virtual display id="
+            val idx = text.indexOf(marker)
+            if (idx >= 0) {
+                val start = idx + marker.length
+                val end = text.indexOfAny(charArrayOf(' ', ',', ';', '\n', '\r'), start)
+                    .let { if (it == -1) text.length else it }
+                val idStr = text.substring(start, end).trim()
+                val id = idStr.toIntOrNull()
+                if (id != null) {
+                    virtualDisplayId = id
+                    DebugLogger.i(TAG, "从日志发现虚拟屏幕 id=$id")
+                }
+            }
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            // 二进制消息（H.264 视频帧）
-            // 暂不处理视频流
+            // 二进制帧包含 H.264 视频，转发给处理器
+            binaryHandler?.invoke(bytes.toByteArray())
         }
     }
 
-    private fun handleTextMessage(text: String) {
-        try {
-            when {
-                text.startsWith("DISPLAY_CREATED ") -> {
-                    val id = text.removePrefix("DISPLAY_CREATED ").trim().toIntOrNull()
-                    virtualDisplayId = id
-                    DebugLogger.i(TAG, "虚拟屏幕已创建: $id")
-                }
-                text.startsWith("DISPLAY_SIZE ") -> {
-                    val parts = text.removePrefix("DISPLAY_SIZE ").split(" ")
-                    if (parts.size >= 2) {
-                        videoWidth = parts[0].toIntOrNull() ?: 0
-                        videoHeight = parts[1].toIntOrNull() ?: 0
-                        DebugLogger.d(TAG, "显示尺寸: ${videoWidth}x$videoHeight")
-                    }
-                }
-                text.startsWith("SCREENSHOT_DATA ") -> {
-                    val base64 = text.removePrefix("SCREENSHOT_DATA ").trim()
-                    try {
-                        val bytes = Base64.decode(base64, Base64.DEFAULT)
-                        pendingScreenshot?.complete(bytes)
-                    } catch (e: Exception) {
-                        DebugLogger.e(TAG, "解码截图失败", e)
-                        pendingScreenshot?.complete(null)
-                    }
-                }
-                text.startsWith("SCREENSHOT_ERROR") -> {
-                    DebugLogger.e(TAG, "截图错误: $text", null)
-                    pendingScreenshot?.complete(null)
-                }
-                // 日志消息
-                else -> {
-                    DebugLogger.d(TAG, "[Server] $text")
-                }
-            }
-        } catch (e: Exception) {
-            DebugLogger.e(TAG, "处理消息失败", e)
-        }
-    }
-
-    private fun buildUrl(): String = "ws://$host:$port"
+    private fun buildUrl(): String = "ws://$HOST:$PORT"
 
     /**
      * 确保 WebSocket 已连接
+     * 防止重复连接，使用 existing deferred 机制
      */
     suspend fun ensureConnected(): Boolean = withContext(Dispatchers.IO) {
         if (connected && webSocket != null) {
             return@withContext true
         }
 
-        DebugLogger.d(TAG, "连接到 Shower 服务器: ${buildUrl()}")
+        // 检查是否已有正在进行的连接
+        val existing = connectingDeferred
+        if (existing != null) {
+            return@withContext try {
+                withTimeout(2000L) {
+                    existing.await()
+                }
+            } catch (e: Exception) {
+                DebugLogger.e(TAG, "等待现有 WebSocket 连接失败", e)
+                false
+            }
+        }
 
         val deferred = CompletableDeferred<Boolean>()
         connectingDeferred = deferred
 
-        val request = Request.Builder()
-            .url(buildUrl())
-            .build()
+        return@withContext try {
+            val request = Request.Builder()
+                .url(buildUrl())
+                .build()
 
-        webSocket = client.newWebSocket(request, listener)
+            webSocket = client.newWebSocket(request, listener)
 
-        // 等待连接完成
-        withTimeoutOrNull(5000L) {
-            deferred.await()
-        } ?: false
+            withTimeout(2000L) {
+                deferred.await()
+            }
+        } catch (e: Exception) {
+            DebugLogger.e(TAG, "连接 WebSocket 失败", e)
+            connectingDeferred = null
+            false
+        }
     }
 
     /**
      * 请求截图
+     * 协议：
+     *   - 客户端发送: SCREENSHOT
+     *   - 服务器回复: SCREENSHOT_DATA <base64_png>
+     *   - 或者: SCREENSHOT_ERROR <reason>
      */
-    suspend fun requestScreenshot(timeoutMs: Long = 5000L): ByteArray? {
+    suspend fun requestScreenshot(timeoutMs: Long = 3000L): ByteArray? {
         if (!ensureConnected()) {
             DebugLogger.w(TAG, "未连接，无法截图", null)
             return null
         }
 
+        // 取消之前的截图请求
+        pendingScreenshot?.complete(null)
         val deferred = CompletableDeferred<ByteArray?>()
         pendingScreenshot = deferred
 
-        sendText("SCREENSHOT")
+        if (!sendText("SCREENSHOT")) {
+            DebugLogger.w(TAG, "发送 SCREENSHOT 命令失败", null)
+            pendingScreenshot = null
+            return null
+        }
 
-        return withTimeoutOrNull(timeoutMs) {
-            deferred.await()
+        return try {
+            withTimeout(timeoutMs) {
+                deferred.await()
+            }
+        } catch (e: Exception) {
+            DebugLogger.e(TAG, "截图超时或失败", e)
+            pendingScreenshot = null
+            null
         }
     }
 
     private fun sendText(cmd: String): Boolean {
         val ws = webSocket
         if (ws == null || !connected) {
-            DebugLogger.w(TAG, "无法发送，未连接", null)
+            DebugLogger.w(TAG, "无法发送，未连接: $cmd", null)
             return false
         }
         DebugLogger.d(TAG, "发送: $cmd")
-        return ws.send(cmd)
+        return try {
+            ws.send(cmd)
+        } catch (e: Exception) {
+            DebugLogger.e(TAG, "发送命令失败: $cmd", e)
+            false
+        }
     }
 
     /**
      * 确保虚拟屏幕已创建
+     * 参考 Operit：先 DESTROY 再 CREATE，确保编码器重新初始化
      */
     suspend fun ensureDisplay(width: Int, height: Int, dpi: Int, bitrateKbps: Int? = null): Boolean {
         if (!ensureConnected()) {
             return false
         }
 
+        // 先销毁现有虚拟屏幕，确保编码器重新发送 SPS/PPS
+        sendText("DESTROY_DISPLAY")
+
+        // 对齐宽高到 8 的倍数
+        var alignedWidth = width and -8
+        var alignedHeight = height and -8
+        if (alignedWidth <= 0 || alignedHeight <= 0) {
+            alignedWidth = maxOf(2, width)
+            alignedHeight = maxOf(2, height)
+        }
+
+        videoWidth = alignedWidth
+        videoHeight = alignedHeight
+
         val cmd = buildString {
-            append("CREATE_DISPLAY $width $height $dpi")
-            if (bitrateKbps != null) {
-                append(" $bitrateKbps")
+            append("CREATE_DISPLAY ")
+            append(alignedWidth)
+            append(' ')
+            append(alignedHeight)
+            append(' ')
+            append(dpi)
+            if (bitrateKbps != null && bitrateKbps > 0) {
+                append(' ')
+                append(bitrateKbps)
             }
         }
 
@@ -202,58 +273,57 @@ class ShowerController(
     /**
      * 启动应用
      */
-    fun launchApp(packageName: String): Boolean {
-        if (!connected) return false
-        val cmd = "LAUNCH_APP $packageName"
-        DebugLogger.d(TAG, "启动应用: $cmd")
-        return sendText(cmd)
+    suspend fun launchApp(packageName: String): Boolean {
+        if (!ensureConnected()) return false
+        if (packageName.isBlank()) return false
+        return sendText("LAUNCH_APP $packageName")
     }
 
     /**
      * 点击
      */
-    fun tap(x: Int, y: Int): Boolean {
-        if (!connected) return false
+    suspend fun tap(x: Int, y: Int): Boolean {
+        if (!ensureConnected()) return false
         return sendText("TAP $x $y")
     }
 
     /**
      * 滑动
      */
-    fun swipe(startX: Int, startY: Int, endX: Int, endY: Int, durationMs: Long = 300L): Boolean {
-        if (!connected) return false
+    suspend fun swipe(startX: Int, startY: Int, endX: Int, endY: Int, durationMs: Long = 300L): Boolean {
+        if (!ensureConnected()) return false
         return sendText("SWIPE $startX $startY $endX $endY $durationMs")
     }
 
     /**
      * 按键
      */
-    fun key(keyCode: Int): Boolean {
-        if (!connected) return false
+    suspend fun key(keyCode: Int): Boolean {
+        if (!ensureConnected()) return false
         return sendText("KEY $keyCode")
     }
 
     /**
      * 触摸按下
      */
-    fun touchDown(x: Int, y: Int): Boolean {
-        if (!connected) return false
+    suspend fun touchDown(x: Int, y: Int): Boolean {
+        if (!ensureConnected()) return false
         return sendText("TOUCH_DOWN $x $y")
     }
 
     /**
      * 触摸移动
      */
-    fun touchMove(x: Int, y: Int): Boolean {
-        if (!connected) return false
+    suspend fun touchMove(x: Int, y: Int): Boolean {
+        if (!ensureConnected()) return false
         return sendText("TOUCH_MOVE $x $y")
     }
 
     /**
      * 触摸抬起
      */
-    fun touchUp(x: Int, y: Int): Boolean {
-        if (!connected) return false
+    suspend fun touchUp(x: Int, y: Int): Boolean {
+        if (!ensureConnected()) return false
         return sendText("TOUCH_UP $x $y")
     }
 
@@ -267,9 +337,13 @@ class ShowerController(
             webSocket?.close(1000, "Client shutdown")
         } catch (e: Exception) {
             DebugLogger.e(TAG, "关闭时出错", e)
+        } finally {
+            webSocket = null
+            connected = false
+            virtualDisplayId = null
+            videoWidth = 0
+            videoHeight = 0
+            binaryHandler = null
         }
-        webSocket = null
-        connected = false
-        virtualDisplayId = null
     }
 }

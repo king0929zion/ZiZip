@@ -1,94 +1,96 @@
 package com.autoglm.android.core.agent
 
+import android.graphics.Bitmap
 import android.media.MediaCodec
+import android.media.MediaCodec.BufferInfo
 import android.media.MediaFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.PixelCopy
 import android.view.Surface
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
-import java.util.Arrays
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * H.264 视频解码器
  * 用于解码 Shower 虚拟屏幕的 H.264 视频流并渲染到 Surface
  *
- * 参考 Operit 的 ShowerVideoRenderer 实现
+ * 参考 Operit 实现，修复了以下问题：
+ * 1. SPS/PPS 在 detach 时不清空（避免重新 attach 后黑屏）
+ * 2. AVCC 转 Annex-B 格式转换
+ * 3. 真正的 PixelCopy 截图实现
+ * 4. NAL 单元类型检测
+ * 5. 解码器错误时的恢复机制
  */
 object ShowerVideoRenderer {
     private const val TAG = "ShowerVideoRenderer"
 
+    private val lock = Any()
+
+    @Volatile
     private var decoder: MediaCodec? = null
+
+    @Volatile
     private var surface: Surface? = null
 
-    // SPS/PPS (Sequence/Picture Parameter Set) for H.264 decoder initialization
-    private var sps: ByteArray? = null
-    private var pps: ByteArray? = null
-
-    // Video dimensions
     @Volatile
-    var videoWidth = 0
-        private set
+    private var csd0: ByteArray? = null  // SPS
 
     @Volatile
-    var videoHeight = 0
-        private set
+    private var csd1: ByteArray? = null  // PPS
 
-    private val csdBuffer = mutableListOf<ByteArray>()
+    private val pendingFrames = mutableListOf<ByteArray>()
 
-    /**
-     * 附加到 Surface
-     */
-    fun attach(surface: Surface, width: Int, height: Int): Boolean {
-        this.surface = surface
-        this.videoWidth = width
-        this.videoHeight = height
+    @Volatile
+    private var width: Int = 0
 
-        Log.d(TAG, "Attaching to surface: ${width}x$height")
+    @Volatile
+    private var height: Int = 0
 
-        try {
-            // Create video format with width and height
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
-            format.setInteger(MediaFormat.KEY_WIDTH, width)
-            format.setInteger(MediaFormat.KEY_HEIGHT, height)
+    fun attach(surface: Surface, videoWidth: Int, videoHeight: Int): Boolean {
+        synchronized(lock) {
+            this.surface = surface
+            this.width = videoWidth
+            this.height = videoHeight
+            // 注意：不要在这里清空 csd0/csd1，否则当 Surface 重新创建但服务器
+            // 不再发送 SPS/PPS 时，解码器将永远无法重新初始化，导致黑屏。
+            // 仅在此处释放旧 decoder，并清空待处理帧。
+            releaseDecoderLocked()
+            pendingFrames.clear()
 
-            // Set SPS/PPS if available
-            sps?.let {
-                format.setByteBuffer("csd-0", ByteBuffer.wrap(it))
-            }
-            pps?.let {
-                format.setByteBuffer("csd-1", ByteBuffer.wrap(it))
-            }
-
-            // Create decoder
-            decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-            decoder?.setCallback(object : MediaCodec.Callback() {
-                override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                    // Input buffer available - we don't use async mode for input
-                    // Frames are fed synchronously in onFrame()
-                }
-
-                override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
-                    // Output buffer available (rendered frame)
-                    codec.releaseOutputBuffer(index, true)  // render = true
-                }
-
-                override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                    Log.e(TAG, "Decoder error", e)
-                }
-
-                override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-                    Log.d(TAG, "Output format changed: $format")
-                }
-            })
-
-            decoder?.configure(format, surface, null, 0)
-            decoder?.start()
-
-            Log.i(TAG, "Decoder attached successfully")
+            Log.d(TAG, "Attached to surface: ${videoWidth}x$videoHeight")
             return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to attach decoder", e)
-            return false
+        }
+    }
+
+    fun detach() {
+        synchronized(lock) {
+            Log.d(TAG, "Detaching from surface")
+            releaseDecoderLocked()
+            surface = null
+            // 不要清空 csd0/csd1，让后续重新 attach 时仍可用之前的 SPS/PPS，避免黑屏
+            pendingFrames.clear()
+        }
+    }
+
+    private fun releaseDecoderLocked() {
+        val dec = decoder
+        decoder = null
+        if (dec != null) {
+            try {
+                dec.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                dec.release()
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -96,161 +98,228 @@ object ShowerVideoRenderer {
      * 处理 H.264 数据帧
      */
     fun onFrame(data: ByteArray) {
-        if (decoder == null) {
-            // Buffer frames until decoder is ready
-            csdBuffer.add(data)
-            return
-        }
+        synchronized(lock) {
+            if (surface == null || width <= 0 || height <= 0) {
+                // 缓冲帧直到 surface 准备好
+                pendingFrames.add(data)
+                return
+            }
 
-        try {
-            val index = decoder!!.dequeueInputBuffer(10000)
-            if (index >= 0) {
-                val buffer = decoder!!.getInputBuffer(index)!!
-                buffer.clear()
+            val packet = maybeAvccToAnnexb(data)
 
-                // Check for SPS/PPS in the data
-                if (isSPS(data)) {
-                    Log.d(TAG, "Found SPS")
-                    sps = data
-                    csdBuffer.add(data)
-                    decoder!!.queueInputBuffer(index, 0, 0, 0, 0)
-                    return
-                } else if (isPPS(data)) {
-                    Log.d(TAG, "Found PPS")
-                    pps = data
-                    csdBuffer.add(data)
-                    decoder!!.queueInputBuffer(index, 0, 0, 0, 0)
-                    return
+            // 如果解码器尚未初始化，需要从流中找到 SPS 和 PPS 包（csd-0, csd-1）
+            if (decoder == null) {
+                val nalType = findNalUnitType(packet)
+                var reinitialized = false
+                if (nalType == 7) { // SPS
+                    if (csd0 == null) {
+                        csd0 = packet
+                        Log.d(TAG, "捕获 SPS (csd-0), size=${packet.size}")
+                    }
+                } else if (nalType == 8) { // PPS
+                    if (csd1 == null) {
+                        csd1 = packet
+                        Log.d(TAG, "捕获 PPS (csd-1), size=${packet.size}")
+                    }
+                } else {
+                    // 缓冲其他帧直到解码器准备好
+                    if (pendingFrames.size < 100) { // 限制缓冲区大小
+                        pendingFrames.add(packet)
+                    }
                 }
 
-                // Feed video data
-                buffer.put(data)
-                decoder!!.queueInputBuffer(index, 0, data.size, System.nanoTime() / 1000, 0)
+                if (csd0 != null && csd1 != null) {
+                    initDecoderLocked()
+                    // 初始化后，处理缓冲的帧
+                    val framesToProcess = pendingFrames.toList()
+                    pendingFrames.clear()
+                    Log.d(TAG, "处理 ${framesToProcess.size} 个待处理帧")
+                    framesToProcess.forEach { frame -> queueFrameToDecoder(frame) }
+                }
+                return // 等待更多包以找到 SPS 和 PPS
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error processing frame", e)
+
+            // 解码器初始化后，直接将帧加入队列
+            queueFrameToDecoder(packet)
         }
     }
 
     /**
-     * 从当前 Surface 捕获截图
+     * 查找 NAL 单元类型
      */
-    fun captureCurrentFramePng(): ByteArray? {
-        val surf = surface ?: return null
-        val decoder = decoder ?: return null
+    private fun findNalUnitType(packet: ByteArray): Int {
+        var offset = -1
+        // 查找起始码 00 00 01 或 00 00 00 01
+        for (i in 0 until packet.size - 3) {
+            if (packet[i] == 0.toByte() && packet[i+1] == 0.toByte()) {
+                if (packet[i+2] == 1.toByte()) {
+                    offset = i + 3
+                    break
+                } else if (i + 3 < packet.size && packet[i+2] == 0.toByte() && packet[i+3] == 1.toByte()) {
+                    offset = i + 4
+                    break
+                }
+            }
+        }
 
-        try {
-            // Get surface dimensions
-            val width = videoWidth
-            val height = videoHeight
+        if (offset != -1 && offset < packet.size) {
+            return (packet[offset].toInt() and 0x1F)
+        }
+        return -1 // 未找到或无效
+    }
 
-            if (width <= 0 || height <= 0) {
+    /**
+     * 将帧加入解码器队列
+     */
+    private fun queueFrameToDecoder(packet: ByteArray) {
+        synchronized(lock) {
+            val dec = decoder ?: return
+            try {
+                val inIndex = dec.dequeueInputBuffer(10000) // 使用小超时
+                if (inIndex >= 0) {
+                    val inputBuffer: ByteBuffer? = dec.getInputBuffer(inIndex)
+                    if (inputBuffer != null) {
+                        inputBuffer.clear()
+                        inputBuffer.put(packet)
+                        dec.queueInputBuffer(inIndex, 0, packet.size, System.nanoTime() / 1000, 0)
+                    }
+                }
+
+                val bufferInfo = BufferInfo()
+                var outIndex = dec.dequeueOutputBuffer(bufferInfo, 0)
+                while (outIndex >= 0) {
+                    dec.releaseOutputBuffer(outIndex, true) // 渲染到 surface
+                    outIndex = dec.dequeueOutputBuffer(bufferInfo, 0)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "解码器错误", e)
+                // 仅重置 decoder 与待处理帧，保留已捕获的 SPS/PPS（csd0/csd1），
+                // 这样后续新帧到来时可以重新初始化解码器，避免进入永久黑屏状态。
+                releaseDecoderLocked()
+                pendingFrames.clear()
+            }
+        }
+    }
+
+    /**
+     * 将长度前缀（AVCC）包转换为 Annex-B 格式（如果必要）
+     *
+     * 如果包已经以 0x00000001 或 0x000001?? 开头，则原样返回
+     */
+    private fun maybeAvccToAnnexb(packet: ByteArray): ByteArray {
+        if (packet.size >= 4) {
+            val b0 = packet[0].toInt() and 0xFF
+            val b1 = packet[1].toInt() and 0xFF
+            val b2 = packet[2].toInt() and 0xFF
+            val b3 = packet[3].toInt() and 0xFF
+            // 0x00000001 或 0x000001?? 模式
+            if (b0 == 0 && b1 == 0 && ((b2 == 0 && b3 == 1) || b2 == 1)) {
+                return packet
+            }
+        }
+
+        val out = ByteArrayOutputStream()
+        var i = 0
+        val n = packet.size
+        while (i + 4 <= n) {
+            val nalLen =
+                ((packet[i].toInt() and 0xFF) shl 24) or
+                ((packet[i + 1].toInt() and 0xFF) shl 16) or
+                ((packet[i + 2].toInt() and 0xFF) shl 8) or
+                (packet[i + 3].toInt() and 0xFF)
+            i += 4
+            if (nalLen <= 0 || i + nalLen > n) {
+                // 不是有效的 AVCC 包，返回原始数据
+                return packet
+            }
+            out.write(byteArrayOf(0, 0, 0, 1))
+            out.write(packet, i, nalLen)
+            i += nalLen
+        }
+
+        val result = out.toByteArray()
+        return if (result.isNotEmpty()) result else packet
+    }
+
+    /**
+     * 捕获解码器 surface 上渲染的当前视频帧为 PNG
+     *
+     * 这在解码器输出 surface 上使用 PixelCopy，因此截图始终与覆盖层中
+     * 显示的实时视频流一致。
+     */
+    suspend fun captureCurrentFramePng(): ByteArray? {
+        val s: Surface
+        val w: Int
+        val h: Int
+        synchronized(lock) {
+            val localSurface = surface
+            if (localSurface == null || width <= 0 || height <= 0) {
+                Log.w(TAG, "captureCurrentFramePng: 无 surface 或无效尺寸")
                 return null
             }
+            s = localSurface
+            w = width
+            h = height
+        }
 
-            // Use PixelCopy to capture the surface (API 24+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-                val pixels = IntArray(width * height)
-
-                try {
-                    // This is a simplified version - actual implementation would use PixelCopy
-                    android.graphics.Canvas(bitmap).also {
-                        it.drawColor(android.graphics.Color.BLACK)
-                    }
-
-                    // For a proper implementation, you would need to use:
-                    // - PixelCopy.request() API 26+
-                    // - Or ImageReader with Surface
-
-                    val stream = java.io.ByteArrayOutputStream()
-                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
-                    return stream.toByteArray()
-                } finally {
-                    bitmap.recycle()
-                }
-            }
-
-            // Fallback for older APIs
+        if (Build.VERSION.SDK_INT < 26) {
+            Log.w(TAG, "captureCurrentFramePng: PixelCopy 需要 API 26")
             return null
+        }
+
+        return withContext(Dispatchers.Main) {
+            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            suspendCancellableCoroutine { cont ->
+                val handler = Handler(Looper.getMainLooper())
+                PixelCopy.request(s, bitmap, { result ->
+                    if (result == PixelCopy.SUCCESS) {
+                        try {
+                            val baos = ByteArrayOutputStream()
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                            cont.resume(baos.toByteArray())
+                        } catch (e: Exception) {
+                            Log.e(TAG, "截图压缩错误", e)
+                            cont.resume(null)
+                        } finally {
+                            bitmap.recycle()
+                        }
+                    } else {
+                        Log.w(TAG, "PixelCopy 失败，代码=$result")
+                        bitmap.recycle()
+                        cont.resume(null)
+                    }
+                }, handler)
+            }
+        }
+    }
+
+    private fun initDecoderLocked() {
+        val s = surface ?: return
+        val localCsd0 = csd0 ?: return
+        val localCsd1 = csd1 ?: return
+        if (width <= 0 || height <= 0) return
+
+        try {
+            // 镜像 Python 客户端行为：确保 csd-0 / csd-1 是 Annex-B 格式
+            // 以防编码器产生 AVCC 风格的长度前缀缓冲区。
+            val csd0Annexb = maybeAvccToAnnexb(localCsd0)
+            val csd1Annexb = maybeAvccToAnnexb(localCsd1)
+
+            val format = MediaFormat.createVideoFormat("video/avc", width, height)
+            format.setByteBuffer("csd-0", ByteBuffer.wrap(csd0Annexb))
+            format.setByteBuffer("csd-1", ByteBuffer.wrap(csd1Annexb))
+
+            val dec = MediaCodec.createDecoderByType("video/avc")
+            dec.configure(format, s, null, 0)
+            dec.start()
+            decoder = dec
+            Log.i(TAG, "MediaCodec 解码器已初始化: ${width}x$height")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to capture frame", e)
-            return null
+            Log.e(TAG, "初始化解码器失败", e)
+            releaseDecoderLocked()
         }
     }
 
-    /**
-     * 分离 H.264 NAL 单元
-     */
-    private fun findNALUnits(data: ByteArray): List<ByteArray> {
-        val nalUnits = mutableListOf<ByteArray>()
-        var start = 0
-
-        for (i in 0 until data.size - 3) {
-            // NAL start code: 0x00 00 00 01 or 0x00 00 00 01
-            if (i + 4 <= data.size) {
-                if (data[i].toInt() == 0 && data[i + 1].toInt() == 0 &&
-                    data[i + 2].toInt() == 0 && data[i + 3].toInt() == 1) {
-                    if (start < i) {
-                        nalUnits.add(Arrays.copyOfRange(data, start, i))
-                    }
-                    start = i
-                }
-            }
-        }
-
-        // Add last unit
-        if (start < data.size) {
-            nalUnits.add(Arrays.copyOfRange(data, start, data.size))
-        }
-
-        return nalUnits
-    }
-
-    /**
-     * 检查是否为 SPS (Sequence Parameter Set)
-     */
-    private fun isSPS(data: ByteArray): Boolean {
-        if (data.size < 5) return false
-        // SPS NAL type is 0x67 (after start code)
-        return data[0] == 0x00.toByte() && data[1] == 0x00.toByte() &&
-               data[2] == 0x00.toByte() && data[3] == 0x01.toByte() &&
-               (data[4].toInt() and 0x1F == 0x07)
-    }
-
-    /**
-     * 检查是否为 PPS (Picture Parameter Set)
-     */
-    private fun isPPS(data: ByteArray): Boolean {
-        if (data.size < 5) return false
-        // PPS NAL type is 0x68 (after start code)
-        return data[0] == 0x00.toByte() && data[1] == 0x00.toByte() &&
-               data[2] == 0x00.toByte() && data[3] == 0x01.toByte() &&
-               (data[4].toInt() and 0x1F == 0x08)
-    }
-
-    /**
-     * 分离 Surface
-     */
-    fun detach() {
-        Log.d(TAG, "Detaching from surface")
-
-        decoder?.let {
-            it.stop()
-            it.release()
-        }
-
-        decoder = null
-        surface = null
-
-        sps = null
-        pps = null
-        csdBuffer.clear()
-    }
-
-    /**
-     * 检查解码器是否已附加
-     */
     val isAttached: Boolean
         get() = decoder != null && surface != null
 }

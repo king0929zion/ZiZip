@@ -9,15 +9,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.autoglm.android.domain.model.ChatMessage
+import com.autoglm.android.data.model.ChatMessage
+import com.autoglm.android.data.model.MessageSender
 import com.autoglm.android.ui.theme.*
 
 @Composable
 fun ChatBubble(message: ChatMessage) {
-    val align = if (message.isUser) Alignment.End else Alignment.Start
-    val backgroundColor = if (message.isUser) PrimaryBlack else PrimaryWhite
-    val contentColor = if (message.isUser) PrimaryWhite else PrimaryBlack
-    val shape = if (message.isUser) {
+    val isUser = message.sender == MessageSender.USER
+    val align = if (isUser) Alignment.End else Alignment.Start
+    val backgroundColor = if (isUser) PrimaryBlack else PrimaryWhite
+    val contentColor = if (isUser) PrimaryWhite else PrimaryBlack
+    val shape = if (isUser) {
         RoundedCornerShape(20.dp, 4.dp, 20.dp, 20.dp)
     } else {
         RoundedCornerShape(4.dp, 20.dp, 20.dp, 20.dp)
@@ -34,7 +36,7 @@ fun ChatBubble(message: ChatMessage) {
                 .widthIn(max = 280.dp) // Max width constraint
         ) {
             Text(
-                text = message.text,
+                text = message.content,
                 style = ZiZipTypography.bodyLarge,
                 color = contentColor
             )

@@ -13,7 +13,7 @@ import com.autoglm.android.ui.screens.permission.PermissionSetupScreen
 import com.autoglm.android.ui.screens.model.ModelManageScreen
 import com.autoglm.android.ui.screens.model.ProviderConfigScreen
 import com.autoglm.android.ui.screens.model.ProviderDetailScreen
-import com.autoglm.android.ui.screens.model.AutoGLMConfigScreen
+import com.autoglm.android.ui.screens.autoglmconfig.AutoGLMConfigScreen
 
 /**
  * 应用导航图

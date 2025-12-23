@@ -1,12 +1,20 @@
 package com.autoglm.android.service.overlay
 
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
@@ -19,22 +27,43 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.autoglm.android.ui.overlay.FloatingBall
 import com.autoglm.android.ui.overlay.OverlayContent
+import com.autoglm.android.ui.overlay.VirtualDisplayBorder
 import com.autoglm.android.ui.theme.ZiZipTheme
 
 class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     private lateinit var windowManager: WindowManager
     private var overlayView: ComposeView? = null
-    
+
     // Lifecycle Management for Compose
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
+
+    // Virtual Display Border state
+    private var showVirtualBorder by mutableStateOf(false)
+
+    // Virtual Display Border broadcast receiver
+    private val borderReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.autoglm.android.action.SET_VIRTUAL_BORDER") {
+                val visible = intent.getBooleanExtra("visible", false)
+                showVirtualBorder = visible
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        // 注册虚拟屏幕边框广播接收器
+        registerReceiver(
+            borderReceiver,
+            IntentFilter("com.autoglm.android.action.SET_VIRTUAL_BORDER")
+        )
+
         showOverlay()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
@@ -52,15 +81,31 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             setViewTreeSavedStateRegistryOwner(this@OverlayService)
             setContent {
                 ZiZipTheme {
-                     OverlayContent(
-                         isExpanded = isExpanded,
-                         onToggle = { toggleOverlay() }
-                     )
+                    // 虚拟屏幕边框
+                    VirtualDisplayBorder(
+                        isActive = showVirtualBorder,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    // 原有的 Overlay 内容
+                    OverlayContent(
+                        isExpanded = isExpanded,
+                        onToggle = { toggleOverlay() }
+                    )
                 }
             }
         }
 
         windowManager.addView(overlayView, params)
+    }
+
+    /**
+     * 设置虚拟屏幕边框可见性
+     * @param visible 是否显示边框
+     */
+    fun setVirtualBorderVisible(visible: Boolean) {
+        showVirtualBorder = visible
+        // 触发 UI 刷新
+        overlayView?.invalidate()
     }
 
     private fun toggleOverlay() {
@@ -107,6 +152,12 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         if (overlayView != null) {
             windowManager.removeView(overlayView)
             overlayView = null
+        }
+        // 注销虚拟屏幕边框广播接收器
+        try {
+            unregisterReceiver(borderReceiver)
+        } catch (e: Exception) {
+            // Receiver might not be registered
         }
     }
 

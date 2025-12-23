@@ -12,6 +12,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 /**
  * Agent 动作类型
@@ -54,19 +55,23 @@ class PhoneAgent(
     }
 
     private val settingsRepo = SettingsRepository.getInstance(context)
-    
+
     private val _execution = MutableStateFlow<TaskExecution?>(null)
     val execution: StateFlow<TaskExecution?> = _execution.asStateFlow()
-    
+
     private var currentJob: Job? = null
     private var isPaused = false
+
+    // Shower 虚拟屏幕支持
+    private val showerController = ShowerController()
+    private var isShowerAvailable = false
     
     /**
      * 执行任务
      */
     suspend fun runTask(taskDescription: String): TaskExecution = withContext(Dispatchers.IO) {
         Log.d(TAG, "Starting task: $taskDescription")
-        
+
         // 检查权限
         if (!ShizukuAuthorizer.hasShizukuPermission()) {
             Log.e(TAG, "No Shizuku permission")
@@ -76,14 +81,42 @@ class PhoneAgent(
                 errorMessage = "缺少 Shizuku 权限"
             )
         }
-        
+
+        // 初始化 Shower 虚拟屏幕
+        try {
+            val serverStarted = ShowerServerManager.ensureServerStarted(context)
+            if (serverStarted) {
+                val metrics = context.resources.displayMetrics
+                CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
+                val displayCreated = showerController.ensureDisplay(
+                    metrics.widthPixels,
+                    metrics.heightPixels,
+                    metrics.densityDpi,
+                    bitrateKbps = 3000
+                )
+                isShowerAvailable = displayCreated
+                Log.i(TAG, "Shower initialized: server=$serverStarted, display=$displayCreated")
+
+                // 显示虚拟屏幕边框
+                if (displayCreated) {
+                    setVirtualBorderVisible(true)
+                }
+            } else {
+                Log.w(TAG, "Shower server not available, using fallback mode")
+                isShowerAvailable = false
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Shower initialization failed, continuing without it", e)
+            isShowerAvailable = false
+        }
+
         val execution = TaskExecution(
             taskDescription = taskDescription,
             status = TaskStatus.RUNNING,
             startTime = System.currentTimeMillis()
         )
         _execution.value = execution
-        
+
         try {
             var stepCount = 0
             var shouldContinue = true
@@ -189,11 +222,36 @@ class PhoneAgent(
                     status = TaskStatus.FAILED,
                     endTime = System.currentTimeMillis(),
                     errorMessage = e.message
-                ) 
+                )
+            }
+        } finally {
+            // 任务结束，隐藏虚拟屏幕边框
+            setVirtualBorderVisible(false)
+            // 关闭 Shower 连接
+            try {
+                showerController.shutdown()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error shutting down Shower", e)
             }
         }
-        
+
         _execution.value ?: execution
+    }
+
+    /**
+     * 设置虚拟屏幕边框可见性
+     * 通过 OverlayService 控制
+     */
+    private fun setVirtualBorderVisible(visible: Boolean) {
+        try {
+            val intent = Intent("com.autoglm.android.action.SET_VIRTUAL_BORDER").apply {
+                putExtra("visible", visible)
+                setPackage(context.packageName)
+            }
+            context.sendBroadcast(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set virtual border visibility", e)
+        }
     }
     
     /**
@@ -226,12 +284,32 @@ class PhoneAgent(
     }
     
     /**
-     * 截图
+     * 截图 - 双路径支持
+     * 优先使用 Shower WebSocket 截图（无 UI 干扰），降级到 screencap 命令
      */
     private suspend fun captureScreenshot(): String? {
         val path = "${context.cacheDir}/screenshot_${System.currentTimeMillis()}.png"
+
+        // 优先使用 Shower 截图（如果可用）
+        if (isShowerAvailable) {
+            try {
+                val showerBytes = showerController.requestScreenshot(timeoutMs = 3000L)
+                if (showerBytes != null) {
+                    File(path).writeBytes(showerBytes)
+                    Log.d(TAG, "Screenshot captured via Shower: $path")
+                    return path
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Shower screenshot failed, falling back to screencap", e)
+            }
+        }
+
+        // 降级到 screencap 命令
         val success = AndroidShellExecutor.screenshot(path)
-        return if (success) path else null
+        return if (success) {
+            Log.d(TAG, "Screenshot captured via screencap: $path")
+            path
+        } else null
     }
     
     /**
@@ -299,10 +377,30 @@ class PhoneAgent(
      */
     private suspend fun executeAction(action: AgentAction): Boolean {
         Log.d(TAG, "Executing action: $action")
-        
+
         return when (action) {
-            is AgentAction.Launch -> AndroidShellExecutor.launchApp(action.packageName)
-            is AgentAction.Tap -> AndroidShellExecutor.tap(action.x, action.y)
+            is AgentAction.Launch -> {
+                // 如果 Shower 可用，通过 Shower 启动
+                if (isShowerAvailable) {
+                    showerController.launchApp(action.packageName)
+                } else {
+                    AndroidShellExecutor.launchApp(action.packageName)
+                }
+            }
+            is AgentAction.Tap -> {
+                // 坐标归一化：检测并转换 0-1000 坐标
+                val (pixelX, pixelY) = if (CoordinateNormalizer.isNormalized(action.x, action.y)) {
+                    CoordinateNormalizer.toPixel(action.x, action.y)
+                } else {
+                    action.x to action.y
+                }
+                // 如果 Shower 可用，通过 Shower 执行
+                if (isShowerAvailable) {
+                    showerController.tap(pixelX, pixelY)
+                } else {
+                    AndroidShellExecutor.tap(pixelX, pixelY)
+                }
+            }
             is AgentAction.Type -> {
                 // 优先使用输入法，降级使用 shell input
                 val imeSuccess = com.autoglm.android.service.ime.ZiZipInputMethod.inputTextDirect(action.text)
@@ -310,9 +408,39 @@ class PhoneAgent(
                     AndroidShellExecutor.inputText(action.text)
                 } else true
             }
-            is AgentAction.Swipe -> AndroidShellExecutor.swipe(action.x1, action.y1, action.x2, action.y2, action.duration)
-            is AgentAction.Back -> AndroidShellExecutor.pressBack()
-            is AgentAction.Home -> AndroidShellExecutor.pressHome()
+            is AgentAction.Swipe -> {
+                // 坐标归一化：检测并转换 0-1000 坐标
+                val (sx, sy) = if (CoordinateNormalizer.isNormalized(action.x1, action.y1)) {
+                    CoordinateNormalizer.toPixel(action.x1, action.y1)
+                } else {
+                    action.x1 to action.y1
+                }
+                val (ex, ey) = if (CoordinateNormalizer.isNormalized(action.x2, action.y2)) {
+                    CoordinateNormalizer.toPixel(action.x2, action.y2)
+                } else {
+                    action.x2 to action.y2
+                }
+                // 如果 Shower 可用，通过 Shower 执行
+                if (isShowerAvailable) {
+                    showerController.swipe(sx, sy, ex, ey, action.duration.toLong())
+                } else {
+                    AndroidShellExecutor.swipe(sx, sy, ex, ey, action.duration)
+                }
+            }
+            is AgentAction.Back -> {
+                if (isShowerAvailable) {
+                    showerController.key(4) // KEYCODE_BACK
+                } else {
+                    AndroidShellExecutor.pressBack()
+                }
+            }
+            is AgentAction.Home -> {
+                if (isShowerAvailable) {
+                    showerController.key(3) // KEYCODE_HOME
+                } else {
+                    AndroidShellExecutor.pressHome()
+                }
+            }
             is AgentAction.Wait -> {
                 delay(action.durationMs.toLong())
                 true

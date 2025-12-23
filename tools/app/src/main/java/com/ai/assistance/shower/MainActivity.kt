@@ -1,5 +1,6 @@
 package com.ai.assistance.shower
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,8 +25,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 启动后台服务
-        ShowerServer.start(this)
+        // 启动前台服务
+        val intent = android.content.Intent(this, ShowerService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
 
         setContent {
             ShowerTheme {

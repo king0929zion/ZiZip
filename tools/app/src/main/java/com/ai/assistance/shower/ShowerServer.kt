@@ -225,8 +225,8 @@ object ShowerServer {
                 val byteArray = stream.toByteArray()
                 val base64 = Base64.encodeToString(byteArray, Base64.NO_WRAP)
 
-                conn.send("OK SCREENSHOT ${base64.length}")
-                conn.send(base64)
+                // 发送 SCREENSHOT_DATA 前缀，匹配客户端期望
+                conn.send("SCREENSHOT_DATA $base64")
 
                 finalBitmap.recycle()
                 bitmap.recycle()

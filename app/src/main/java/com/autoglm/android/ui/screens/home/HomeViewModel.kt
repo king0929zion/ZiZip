@@ -1,21 +1,24 @@
 package com.autoglm.android.ui.screens.home
 
 import android.app.Application
+import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autoglm.android.core.agent.AutoGLMApiClient
 import com.autoglm.android.core.agent.PhoneAgent
+import com.autoglm.android.core.api.ChatClient
+import com.autoglm.android.core.api.ChatClientException
+import com.autoglm.android.core.api.Message
 import com.autoglm.android.data.model.*
 import com.autoglm.android.data.repository.HistoryRepository
 import com.autoglm.android.data.repository.ModelConfigRepository
 import com.autoglm.android.data.repository.SettingsRepository
-import com.autoglm.android.domain.model.MockModelProvider
-import com.autoglm.android.domain.model.ModelProvider
 import com.autoglm.android.ui.components.ToolType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 /**
@@ -60,11 +63,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val modelRepo = ModelConfigRepository.getInstance(application)
     private val historyRepo = HistoryRepository.getInstance(application)
     
-    private val modelProvider: ModelProvider = MockModelProvider()
+    // 真实的聊天客户端
+    private val chatClient = ChatClient(modelRepo, settingsRepo)
     
     // Agent 相关
     private val apiClient = AutoGLMApiClient(settingsRepo)
     private val phoneAgent = PhoneAgent(application, apiClient)
+    
+    // 对话历史（用于上下文）
+    private val conversationHistory = mutableListOf<Message>()
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -168,17 +175,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isChatRunning = true)
             
             try {
-                val response = when (selectedTool) {
-                    ToolType.AGENT -> modelProvider.processQuery("$content [AGENT_MODE]")
-                    ToolType.BUILD_APP -> modelProvider.processQuery("$content [BUILD_APP_MODE]")
-                    ToolType.CANVAS -> modelProvider.processQuery("$content [CANVAS_MODE]")
-                    ToolType.NONE -> modelProvider.processQuery(content)
-                }
-                
-                removeChatItem(loadingId)
-                
                 when (selectedTool) {
                     ToolType.AGENT -> {
+                        removeChatItem(loadingId)
                         // 使用真正的 PhoneAgent 执行任务
                         addChatItem(ChatItem(
                             isUser = false,
@@ -192,7 +191,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 val execution = phoneAgent.runTask(content)
                                 _uiState.value = _uiState.value.copy(currentExecution = execution)
                                 
-                                // 根据执行结果添加消息
                                 val statusMessage = when (execution.status) {
                                     TaskStatus.COMPLETED -> "✅ 任务执行完成！"
                                     TaskStatus.FAILED -> "❌ 任务执行失败: ${execution.errorMessage ?: "未知错误"}"
@@ -217,33 +215,47 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     }
-                    ToolType.BUILD_APP -> {
+                    else -> {
+                        // 使用 ChatClient 进行真实对话
+                        val imageBase64 = if (attachedImages.isNotEmpty()) {
+                            // 读取第一张图片并转为 Base64
+                            try {
+                                val file = File(attachedImages.first())
+                                if (file.exists()) {
+                                    Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                                } else null
+                            } catch (e: Exception) { null }
+                        } else null
+                        
+                        // 添加用户消息到历史
+                        conversationHistory.add(Message.user(content, imageBase64))
+                        
+                        // 发送到模型
+                        val response = chatClient.sendMessage(conversationHistory)
+                        
+                        removeChatItem(loadingId)
+                        
+                        // 添加助手消息到历史
+                        conversationHistory.add(Message.assistant(response.rawContent))
+                        
+                        // 显示响应
+                        val displayContent = response.content.ifBlank { response.rawContent }
                         addChatItem(ChatItem(
                             isUser = false,
-                            message = "🚀 正在生成应用代码...\n\n${response.message ?: "代码生成完成！"}",
-                            toolUsed = ToolType.BUILD_APP,
-                            isSuccess = true
-                        ))
-                    }
-                    ToolType.CANVAS -> {
-                        addChatItem(ChatItem(
-                            isUser = false,
-                            message = "🎨 Canvas 画布已创建\n\n${response.message ?: "您可以开始编辑了。"}",
-                            toolUsed = ToolType.CANVAS,
-                            isSuccess = true
-                        ))
-                    }
-                    ToolType.NONE -> {
-                        addChatItem(ChatItem(
-                            isUser = false,
-                            message = response.message,
-                            thinking = response.thinking,
-                            actionType = response.action?.actionName,
+                            message = displayContent,
+                            thinking = response.thinking.takeIf { it.isNotBlank() },
                             isSuccess = true
                         ))
                     }
                 }
                 
+            } catch (e: ChatClientException) {
+                removeChatItem(loadingId)
+                addChatItem(ChatItem(
+                    isUser = false,
+                    message = "❌ ${e.message}",
+                    isSuccess = false
+                ))
             } catch (e: Exception) {
                 removeChatItem(loadingId)
                 addChatItem(ChatItem(
@@ -259,6 +271,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     fun startNewConversation() {
         viewModelScope.launch {
+            conversationHistory.clear()
             _uiState.value = _uiState.value.copy(
                 chatItems = emptyList(),
                 currentSessionId = null,

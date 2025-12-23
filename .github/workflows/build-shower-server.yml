@@ -8,6 +8,10 @@ on:
       - '.github/workflows/build-shower-server.yml'
   workflow_call:
 
+# 设置 GitHub Actions 权限
+permissions:
+  contents: write
+
 jobs:
   build-shower-apk:
     runs-on: ubuntu-latest

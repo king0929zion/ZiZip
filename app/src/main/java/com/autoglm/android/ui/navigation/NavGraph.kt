@@ -14,6 +14,7 @@ import com.autoglm.android.ui.screens.model.ModelManageScreen
 import com.autoglm.android.ui.screens.model.ProviderConfigScreen
 import com.autoglm.android.ui.screens.model.ProviderDetailScreen
 import com.autoglm.android.ui.screens.autoglmconfig.AutoGLMConfigScreen
+import com.autoglm.android.ui.screens.virtualdisplay.VirtualDisplayScreen
 
 /**
  * 应用导航图
@@ -74,6 +75,11 @@ fun ZiZipNavGraph(
         // AutoGLM 配置页面
         composable(Screen.AutoGLMConfig.route) {
             AutoGLMConfigScreen(navController = navController)
+        }
+
+        // 虚拟屏幕显示页面
+        composable(Screen.VirtualDisplay.route) {
+            VirtualDisplayScreen(navController = navController)
         }
     }
 }

@@ -139,7 +139,7 @@ fun HomeScreen(
                                             onPause = { viewModel.pauseTask() },
                                             onResume = { viewModel.resumeTask() },
                                             onStop = { viewModel.stopTask() },
-                                            onClick = { /* TODO: 打开虚拟屏幕预览 */ }
+                                            onClick = { navController.navigate(Screen.VirtualDisplay.route) }
                                         )
                                     }
                                 }

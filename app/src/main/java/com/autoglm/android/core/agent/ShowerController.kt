@@ -49,8 +49,34 @@ class ShowerController(
     @Volatile
     private var connectingDeferred: CompletableDeferred<Boolean>? = null
 
+    @Volatile
+    var isStreamingVideo = false
+        private set
+
     fun getDisplayId(): Int? = virtualDisplayId
     fun getVideoSize(): Pair<Int, Int> = Pair(videoWidth, videoHeight)
+    fun isConnected(): Boolean = connected
+    fun isVideoStreaming(): Boolean = isStreamingVideo
+
+    /**
+     * 启用 H.264 视频流
+     * 二进制数据将自动转发到 ShowerVideoRenderer
+     */
+    fun enableVideoStreaming() {
+        isStreamingVideo = true
+        binaryHandler = { data -> ShowerVideoRenderer.onFrame(data) }
+        Log.d(TAG, "Video streaming enabled")
+    }
+
+    /**
+     * 禁用视频流
+     */
+    fun disableVideoStreaming() {
+        isStreamingVideo = false
+        binaryHandler = null
+        Log.d(TAG, "Video streaming disabled")
+    }
+
     fun setBinaryHandler(handler: ((ByteArray) -> Unit)?) {
         binaryHandler = handler
     }
@@ -172,6 +198,7 @@ class ShowerController(
 
     /**
      * 确保虚拟屏幕已创建
+     * 创建后自动启用视频流
      */
     suspend fun ensureDisplay(width: Int, height: Int, dpi: Int, bitrateKbps: Int? = null): Boolean {
         if (!ensureConnected()) return false
@@ -182,7 +209,13 @@ class ShowerController(
                 append(" $bitrateKbps")
             }
         }
-        return sendText(cmd)
+
+        val success = sendText(cmd)
+        if (success) {
+            // 启用视频流
+            enableVideoStreaming()
+        }
+        return success
     }
 
     /**
@@ -245,6 +278,7 @@ class ShowerController(
      * 关闭连接
      */
     fun shutdown() {
+        disableVideoStreaming()
         try {
             sendText("SHUTDOWN")
             webSocket?.close(1000, "Client shutdown")

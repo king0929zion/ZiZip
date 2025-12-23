@@ -1,6 +1,7 @@
 package com.autoglm.android.core.agent
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import com.autoglm.android.core.debug.DebugLogger
 import com.autoglm.android.core.shizuku.AndroidShellExecutor
@@ -8,142 +9,73 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
  * Shower 服务器管理器
- * 管理虚拟屏幕服务器的生命周期
- * 参考 Operit 实现
+ * 管理 Shower Server 独立应用的启动
+ *
+ * 架构说明：
+ * - Shower Server 是一个独立应用（包名: com.ai.assistance.shower）
+ * - ZiZip 通过 WebSocket 连接到 Shower Server
+ * - 用户需要分别安装两个应用
  */
 object ShowerServerManager {
     private const val TAG = "ShowerServerManager"
-    private const val ASSET_JAR_NAME = "shower-server.jar"
-    private const val ASSET_APK_NAME = "shower-server.apk"
-    private const val LOCAL_JAR_NAME = "shower-server.apk"
+    private const val SHOWER_PACKAGE = "com.ai.assistance.shower"
     private const val SERVER_PORT = 8986
+    private const val SHOWER_MAIN = "com.ai.assistance.shower.Main"
 
     /**
-     * 检查服务器文件是否存在（JAR 或 APK）
+     * 检查 Shower Server 应用是否已安装
      */
-    fun isJarAvailable(context: Context): Boolean {
-        // 优先检查 APK（推荐方式）
-        if (checkAssetExists(context, ASSET_APK_NAME)) {
-            DebugLogger.d(TAG, "APK exists in assets: $ASSET_APK_NAME")
-            return true
-        }
-        // 降级检查 JAR（兼容方式）
-        if (checkAssetExists(context, ASSET_JAR_NAME)) {
-            DebugLogger.d(TAG, "JAR exists in assets: $ASSET_JAR_NAME")
-            return true
-        }
-        DebugLogger.e(TAG, "No shower-server file found in assets", null)
-        return false
-    }
-
-    private fun checkAssetExists(context: Context, assetName: String): Boolean {
+    fun isShowerAppInstalled(context: Context): Boolean {
         return try {
-            val size = context.assets.open(assetName).use { it.available() }
-            DebugLogger.d(TAG, "Asset $assetName size: $size bytes")
-            size > 0
-        } catch (e: Exception) {
+            context.packageManager.getPackageInfo(SHOWER_PACKAGE, 0)
+            DebugLogger.d(TAG, "✓ Shower Server 应用已安装")
+            true
+        } catch (e: PackageManager.NameNotFoundException) {
+            DebugLogger.w(TAG, "✗ Shower Server 应用未安装", null)
             false
         }
     }
 
     /**
-     * 获取资源文件名（优先 APK）
+     * 启动 Shower Server
+     * 通过 app_process 启动已安装的 Shower Server 应用
      */
-    private fun getAssetFileName(): String {
-        return ASSET_APK_NAME // 优先使用 APK
-    }
+    suspend fun startServer(context: Context): Boolean = withContext(Dispatchers.IO) {
+        DebugLogger.i(TAG, "========== 启动 Shower Server ==========")
 
-    /**
-     * 获取本地文件名（带 .apk 后缀）
-     */
-    private fun getLocalFileName(): String {
-        return "shower-server.apk"
-    }
+        // 检查应用是否安装
+        if (!isShowerAppInstalled(context)) {
+            DebugLogger.e(TAG, "✗ Shower Server 应用未安装", null)
+            DebugLogger.e(TAG, "", null)
+            DebugLogger.e(TAG, "请先安装 Shower Server 应用:", null)
+            DebugLogger.e(TAG, "  1. 从 GitHub 下载 Shower Server APK", null)
+            DebugLogger.e(TAG, "  2. 在设备上安装 Shower Server", null)
+            DebugLogger.e(TAG, "  3. 打开 Shower Server 应用一次", null)
+            return false
+        }
 
-    /**
-     * 确保服务器已启动
-     */
-    suspend fun ensureServerStarted(context: Context): Boolean {
-        DebugLogger.i(TAG, "========== Shower 服务器启动流程 ==========")
-
-        // 检查服务器是否已在监听
+        // 检查是否已在运行
         if (isServerListening()) {
-            DebugLogger.i(TAG, "✓ Shower 服务器已在运行 (127.0.0.1:$SERVER_PORT)")
+            DebugLogger.i(TAG, "✓ Shower Server 已在运行")
             return true
         }
 
-        // 检查服务器文件是否存在
-        DebugLogger.d(TAG, "检查 shower-server.apk 资源...")
-        if (!isJarAvailable(context)) {
-            DebugLogger.e(TAG, "✗ shower-server.apk 不存在于 assets 目录", null)
-            DebugLogger.e(TAG, "解决方法:", null)
-            DebugLogger.e(TAG, "  1. 等待 GitHub Actions 自动构建", null)
-            DebugLogger.e(TAG, "  2. 或手动构建: cd tools && ./gradlew assembleDebug", null)
-            DebugLogger.e(TAG, "  3. 复制 APK: cp tools/app/build/outputs/apk/debug/app-debug.apk app/src/main/assets/shower-server.apk", null)
-            return false
-        }
-        DebugLogger.i(TAG, "✓ 资源文件存在")
+        // 通过 am start-service 启动 Shower Server
+        // 使用 app_process 方式启动
+        val cmd = "CLASSPATH=/data/app/$SHOWER_PACKAGE*/base.apk app_process / com.ai.assistance.shower.Main >/data/local/tmp/shower.log 2>&1 &"
+        DebugLogger.d(TAG, "启动命令: $cmd")
 
-        val appContext = context.applicationContext
-        val jarFile = try {
-            DebugLogger.d(TAG, "复制 APK 到外部目录...")
-            copyJarToExternalDir(appContext)
-        } catch (e: Exception) {
-            DebugLogger.e(TAG, "✗ 复制 APK 失败: ${e.message}", e)
-            return false
-        }
+        // 首先尝试通过 am 启动
+        val startCmd = "am startservice -n $SHOWER_PACKAGE/.Main 2>/dev/null || $cmd"
+        val result = AndroidShellExecutor.executeCommand(startCmd)
 
-        // 检查文件是否存在且有内容
-        if (!jarFile.exists() || jarFile.length() == 0L) {
-            DebugLogger.e(TAG, "✗ APK 文件为空或不存在: ${jarFile.absolutePath}", null)
-            return false
-        }
-        DebugLogger.i(TAG, "✓ APK 已复制 (${jarFile.length()} bytes)")
-
-        // 停止现有服务器
-        DebugLogger.d(TAG, "停止现有 Shower 服务器进程...")
-        val killCmd = "pkill -f com.ai.assistance.shower.Main >/dev/null 2>&1 || true"
-        AndroidShellExecutor.executeCommand(killCmd)
-        delay(500) // 等待进程完全终止
-
-        // 复制 APK 到 /data/local/tmp
-        val remoteJarPath = "/data/local/tmp/${getLocalFileName()}"
-        val packageName = context.packageName
-        val appFilePath = "/data/data/$packageName/files/${getLocalFileName()}"
-        DebugLogger.d(TAG, "复制 APK 到 $remoteJarPath...")
-
-        // 使用 run-as 访问应用私有目录（仅 debug 版本可用）
-        // 如果失败，降级到普通 cat 命令
-        val copyCmd = "run-as $packageName cat $appFilePath > $remoteJarPath 2>/dev/null || cat $appFilePath > $remoteJarPath"
-        val copyResult = AndroidShellExecutor.executeCommand(copyCmd)
-        if (!copyResult.success) {
-            DebugLogger.e(TAG, "✗ 复制 APK 到 /data/local/tmp 失败: ${copyResult.error}", null)
-            DebugLogger.e(TAG, "可能原因: SELinux 限制或 run-as 不可用", null)
-            DebugLogger.e(TAG, "解决方法:", null)
-            DebugLogger.e(TAG, "  1. 确保使用 Debug 版本安装", null)
-            DebugLogger.e(TAG, "  2. 手动执行: adb push $appFilePath $remoteJarPath", null)
-            return false
-        }
-        DebugLogger.i(TAG, "✓ APK 已复制到 /data/local/tmp")
-
-        // 给予执行权限
-        DebugLogger.d(TAG, "设置执行权限...")
-        val chmodCmd = "chmod 644 $remoteJarPath" // APK 不需要执行权限
-        AndroidShellExecutor.executeCommand(chmodCmd)
-
-        // 启动服务器（后台运行）
-        DebugLogger.d(TAG, "启动 Shower 服务器...")
-        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main >/data/local/tmp/shower.log 2>&1 &"
-        DebugLogger.d(TAG, "启动命令: $startCmd")
-        val startResult = AndroidShellExecutor.executeCommand(startCmd)
-        if (!startResult.success) {
-            DebugLogger.w(TAG, "启动命令返回错误，但服务器可能仍在启动中", null)
+        if (!result.success) {
+            DebugLogger.w(TAG, "启动命令返回错误，但服务可能仍在启动", null)
         }
 
         // 等待服务器启动（最多 10 秒）
@@ -151,16 +83,16 @@ object ShowerServerManager {
         for (attempt in 0 until 50) {
             delay(200)
             if (isServerListening()) {
-                DebugLogger.i(TAG, "✓ Shower 服务器启动成功 (${(attempt + 1) * 200}ms)")
+                DebugLogger.i(TAG, "✓ Shower Server 启动成功 (${(attempt + 1) * 200}ms)")
                 return true
             }
         }
 
-        DebugLogger.e(TAG, "✗ Shower 服务器启动超时", null)
+        DebugLogger.e(TAG, "✗ Shower Server 启动超时", null)
         DebugLogger.e(TAG, "调试信息:", null)
         DebugLogger.e(TAG, "  1. 检查日志: adb shell cat /data/local/tmp/shower.log", null)
         DebugLogger.e(TAG, "  2. 检查进程: adb shell ps | grep shower", null)
-        DebugLogger.e(TAG, "  3. 检查端口: adb shell netstat -an | grep 8986", null)
+        DebugLogger.e(TAG, "  3. 手动打开 Shower Server 应用", null)
         return false
     }
 
@@ -168,47 +100,11 @@ object ShowerServerManager {
      * 停止服务器
      */
     suspend fun stopServer(): Boolean {
-        DebugLogger.d(TAG, "停止 Shower 服务器...")
-        val cmd = "pkill -f com.ai.assistance.shower.Main >/dev/null 2>&1 || true"
+        DebugLogger.d(TAG, "停止 Shower Server...")
+        val cmd = "pkill -f $SHOWER_MAIN >/dev/null 2>&1 || true"
         val result = AndroidShellExecutor.executeCommand(cmd)
         DebugLogger.i(TAG, if (result.success) "✓ 服务器已停止" else "停止命令执行完成")
         return result.success
-    }
-
-    /**
-     * 复制 APK 到外部目录
-     */
-    private suspend fun copyJarToExternalDir(context: Context): File = withContext(Dispatchers.IO) {
-        // 使用应用私有目录（/data/data/<package>/files/）
-        // 因为 Shizuku shell 可以通过 run-as 访问
-        val appFileDir = context.filesDir
-        val outFile = File(appFileDir, getLocalFileName())
-
-        // 优先使用 APK，降级使用 JAR
-        val assetName = getAssetFileName()
-        try {
-            context.assets.open(assetName).use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            DebugLogger.d(TAG, "已复制 $assetName 到 ${outFile.absolutePath} (${outFile.length()} bytes)")
-        } catch (e: Exception) {
-            // 如果 APK 不存在，尝试 JAR
-            if (assetName == ASSET_APK_NAME) {
-                DebugLogger.w(TAG, "APK 不存在，尝试 JAR 降级", null)
-                context.assets.open(ASSET_JAR_NAME).use { input ->
-                    FileOutputStream(outFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                DebugLogger.d(TAG, "已复制 $ASSET_JAR_NAME 到 ${outFile.absolutePath} (${outFile.length()} bytes)")
-            } else {
-                throw e
-            }
-        }
-
-        outFile
     }
 
     /**
@@ -224,4 +120,32 @@ object ShowerServerManager {
             false
         }
     }
+
+    /**
+     * 获取 Shower Server 下载信息
+     */
+    fun getDownloadInfo(): DownloadInfo {
+        return DownloadInfo(
+            packageName = SHOWER_PACKAGE,
+            appName = "Shower Server",
+            description = "虚拟屏幕服务应用",
+            version = "1.0",
+            downloadUrl = "https://github.com/king0929zion/ZiZip/releases",
+            instructions = listOf(
+                "1. 下载 Shower Server APK",
+                "2. 在设备上安装 APK",
+                "3. 打开 Shower Server 应用一次（初始化服务）",
+                "4. 返回 ZiZip 使用 Agent 模式"
+            )
+        )
+    }
+
+    data class DownloadInfo(
+        val packageName: String,
+        val appName: String,
+        val description: String,
+        val version: String,
+        val downloadUrl: String,
+        val instructions: List<String>
+    )
 }

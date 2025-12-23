@@ -104,7 +104,7 @@ class PhoneAgent(
             try {
                 DebugLogger.d(TAG, "初始化 Shower 虚拟屏幕...")
                 DebugLogger.d(TAG, "1. 启动 Shower 服务器...")
-                val serverStarted = ShowerServerManager.ensureServerStarted(context)
+                val serverStarted = ShowerServerManager.startServer(context)
 
                 if (serverStarted) {
                     DebugLogger.i(TAG, "  ✓ Shower 服务器已启动")

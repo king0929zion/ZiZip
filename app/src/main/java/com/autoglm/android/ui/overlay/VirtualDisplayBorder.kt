@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.autoglm.android.ui.theme.SuccessColor
 
 /**
@@ -59,7 +60,7 @@ fun VirtualDisplayBorder(
         ),
         label = "border_width"
     )
-    val lineWidth = strokeWidth + (lineWidthAnim * 2.dp)
+    val lineWidth = strokeWidth + (lineWidthAnim * 2f).dp
 
     Box(
         modifier = modifier

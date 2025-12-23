@@ -7,9 +7,8 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
 import android.media.ImageReader
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.util.Base64
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
@@ -20,14 +19,13 @@ import org.java_websocket.server.WebSocketServer
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
-import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Shower Server 主类
  * 提供 WebSocket 服务和虚拟屏幕功能
  */
-object Main {
+object ShowerServer {
     private const val TAG = "ShowerServer"
     private const val SERVER_PORT = 8986
 
@@ -76,7 +74,6 @@ object Main {
     class ShowerWebSocketServer(address: InetSocketAddress) : WebSocketServer(address) {
         private var virtualDisplay: VirtualDisplay? = null
         private var imageReader: ImageReader? = null
-        private var mediaProjection: MediaProjection? = null
         private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
         override fun onOpen(conn: WebSocket, handshake: ClientHandshake?) {

@@ -25,7 +25,7 @@ object ShowerServerManager {
     private const val TAG = "ShowerServerManager"
     private const val SHOWER_PACKAGE = "com.ai.assistance.shower"
     private const val SERVER_PORT = 8986
-    private const val SHOWER_MAIN = "com.ai.assistance.shower.Main"
+    private const val SHOWER_MAIN = "com.ai.assistance.shower.ShowerServer"
 
     /**
      * 检查 Shower Server 应用是否已安装
@@ -65,13 +65,13 @@ object ShowerServerManager {
             return@withContext true
         }
 
-        // 通过 am start-service 启动 Shower Server
-        // 使用 app_process 方式启动
-        val cmd = "CLASSPATH=/data/app/$SHOWER_PACKAGE*/base.apk app_process / com.ai.assistance.shower.Main >/data/local/tmp/shower.log 2>&1 &"
+        // 通过 am start 启动 Shower Server 应用
+        // 使用 app_process 方式启动（备用）
+        val cmd = "CLASSPATH=/data/app/$SHOWER_PACKAGE*/base.apk app_process / com.ai.assistance.shower.ShowerServer >/data/local/tmp/shower.log 2>&1 &"
         DebugLogger.d(TAG, "启动命令: $cmd")
 
-        // 首先尝试通过 am 启动
-        val startCmd = "am startservice -n $SHOWER_PACKAGE/.Main 2>/dev/null || $cmd"
+        // 首先尝试通过 am start 启动 Activity
+        val startCmd = "am start -n $SHOWER_PACKAGE/.MainActivity 2>/dev/null || $cmd"
         val result = AndroidShellExecutor.executeCommand(startCmd)
 
         if (!result.success) {

@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // 启动后台服务
-        Main.start(this)
+        ShowerServer.start(this)
 
         setContent {
             ShowerTheme {

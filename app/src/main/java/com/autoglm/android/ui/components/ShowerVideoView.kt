@@ -1,29 +1,43 @@
 package com.autoglm.android.ui.components
 
+import android.util.Log
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.autoglm.android.core.agent.ShowerVideoRenderer
+import com.autoglm.android.ui.theme.Accent
+import com.autoglm.android.ui.theme.Grey400
+import com.autoglm.android.ui.theme.Grey500
+import com.autoglm.android.ui.theme.Grey600
 import kotlinx.coroutines.delay
-import android.util.Log
-import android.view.MotionEvent
-import android.view.HapticFeedbackConstants
 
 private const val TAG = "ShowerVideoView"
 
@@ -113,10 +127,7 @@ fun ShowerVideoView(
                     if (!isStreaming) {
                         // Not connected state
                         Icon(
-                            android.vector.graphics.drawable.Icon.createWithContext(
-                                context,
-                                androidx.compose.ui.R.drawable.ic_flower_placeholder
-                            ),
+                            imageVector = Icons.Default.VideocamOff,
                             contentDescription = null,
                             tint = Grey600,
                             modifier = Modifier.size(48.dp)

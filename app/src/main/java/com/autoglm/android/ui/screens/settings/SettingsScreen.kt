@@ -22,10 +22,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.autoglm.android.core.agent.ShowerServerManager
 import com.autoglm.android.data.repository.SettingsRepository
 import com.autoglm.android.service.accessibility.AutoGLMAccessibilityService
 import com.autoglm.android.ui.navigation.Screen
 import com.autoglm.android.ui.theme.*
+import kotlinx.coroutines.launch
 
 /**
  * 设置页面
@@ -41,11 +43,14 @@ fun SettingsScreen(
     var agentModeEnabled by remember { mutableStateOf(settingsRepo.isAgentModeEnabled()) }
     var accessibilityEnabled by remember { mutableStateOf(false) }
     var overlayPermissionGranted by remember { mutableStateOf(false) }
-    
-    // 检查权限状态
+    var showerAppInstalled by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // 检查权限和应用状态
     LaunchedEffect(Unit) {
         accessibilityEnabled = AutoGLMAccessibilityService.instance != null
         overlayPermissionGranted = Settings.canDrawOverlays(context)
+        showerAppInstalled = ShowerServerManager.isShowerAppInstalled(context)
     }
     
     Scaffold(
@@ -116,7 +121,29 @@ fun SettingsScreen(
                     onClick = { navController.navigate(Screen.AutoGLMConfig.route) }
                 )
             }
-            
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Shower Server 虚拟屏幕
+            SectionHeader(title = "Shower Server 虚拟屏幕")
+            SettingsCard {
+                ShowerServerTile(
+                    isInstalled = showerAppInstalled,
+                    onRefresh = {
+                        scope.launch {
+                            showerAppInstalled = ShowerServerManager.isShowerAppInstalled(context)
+                        }
+                    },
+                    onOpenDownload = {
+                        val downloadInfo = ShowerServerManager.getDownloadInfo()
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            data = Uri.parse(downloadInfo.downloadUrl)
+                        }
+                        context.startActivity(intent)
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // 调试
@@ -334,4 +361,161 @@ private fun NavigationTile(
             modifier = Modifier.size(20.dp)
         )
     }
+}
+
+@Composable
+private fun ShowerServerTile(
+    isInstalled: Boolean,
+    onRefresh: () -> Unit,
+    onOpenDownload: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { showDialog = true }
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (isInstalled) Icons.Default.CheckCircle else Icons.Default.CloudDownload,
+                contentDescription = null,
+                tint = if (isInstalled) SuccessColor else WarningColor,
+                modifier = Modifier.size(24.dp)
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Shower Server",
+                    style = ZiZipTypography.bodyLarge,
+                    color = Grey900
+                )
+                Text(
+                    text = if (isInstalled) "已安装" else "未安装 - Agent 模式需要",
+                    style = ZiZipTypography.labelSmall,
+                    color = if (isInstalled) SuccessColor else WarningColor
+                )
+            }
+
+            IconButton(onClick = { showDialog = true }) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "详情",
+                    tint = Grey400,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+
+    if (showDialog) {
+        ShowerServerDialog(
+            isInstalled = isInstalled,
+            onDismiss = { showDialog = false },
+            onRefresh = {
+                onRefresh()
+                showDialog = false
+            },
+            onOpenDownload = {
+                onOpenDownload()
+                showDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ShowerServerDialog(
+    isInstalled: Boolean,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenDownload: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = if (isInstalled) Icons.Default.CheckCircle else Icons.Default.CloudDownload,
+                contentDescription = null,
+                tint = if (isInstalled) SuccessColor else WarningColor,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Shower Server 虚拟屏幕",
+                style = ZiZipTypography.titleMedium
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = if (isInstalled) {
+                        "Shower Server 已安装，可以正常使用 Agent 模式的虚拟屏幕功能。"
+                    } else {
+                        "Shower Server 是一个独立应用，提供虚拟屏幕功能。使用 Agent 模式需要先安装此应用。"
+                    },
+                    style = ZiZipTypography.bodyMedium,
+                    color = Grey700
+                )
+
+                if (!isInstalled) {
+                    Text(
+                        text = "安装步骤：",
+                        style = ZiZipTypography.labelSmall.copy(
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                        ),
+                        color = Grey900
+                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(start = 12.dp)
+                    ) {
+                        Text("1. 从 GitHub 下载 Shower Server APK", style = ZiZipTypography.labelSmall, color = Grey600)
+                        Text("2. 在设备上安装 APK", style = ZiZipTypography.labelSmall, color = Grey600)
+                        Text("3. 打开 Shower Server 应用一次（初始化服务）", style = ZiZipTypography.labelSmall, color = Grey600)
+                        Text("4. 返回 ZiZip 使用 Agent 模式", style = ZiZipTypography.labelSmall, color = Grey600)
+                    }
+                }
+
+                HorizontalDivider(color = Grey150)
+
+                Text(
+                    text = "包名: com.ai.assistance.shower",
+                    style = ZiZipTypography.labelSmall,
+                    color = Grey500
+                )
+            }
+        },
+        confirmButton = {
+            if (isInstalled) {
+                TextButton(onClick = onRefresh) {
+                    Text("刷新状态", color = Accent)
+                }
+            } else {
+                Button(
+                    onClick = onOpenDownload,
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                ) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("去下载")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭", color = Grey600)
+            }
+        },
+        containerColor = PrimaryWhite
+    )
 }

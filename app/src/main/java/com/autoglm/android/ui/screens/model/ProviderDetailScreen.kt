@@ -159,33 +159,33 @@ fun ProviderDetailScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        if (apiKey.isBlank()) {
-                            errorMessage = "请先输入 API Key"
-                            return@onClick
-                        }
-                        scope.launch {
-                            isFetching = true
-                            errorMessage = null
-                            try {
-                                val p = provider ?: run {
-                                    errorMessage = "供应商未加载"
-                                    return@launch
+                        if (apiKey.isNotBlank()) {
+                            scope.launch {
+                                isFetching = true
+                                errorMessage = null
+                                try {
+                                    val p = provider ?: run {
+                                        errorMessage = "供应商未加载"
+                                        return@launch
+                                    }
+                                    val newProviders = modelRepo.providers.value.map { prov ->
+                                        if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
+                                    }
+                                    val providerToUpdate = newProviders.find { it.type == p.type }
+                                    if (providerToUpdate != null) {
+                                        modelRepo.updateProvider(providerToUpdate)
+                                    }
+                                    // Show message instead of fetching
+                                    errorMessage = "请手动添加模型（获取模型列表功能尚未实现）"
+                                    refreshProvider()
+                                } catch (e: Exception) {
+                                    errorMessage = e.message ?: "获取失败"
+                                } finally {
+                                    isFetching = false
                                 }
-                                val newProviders = modelRepo.providers.value.map { prov ->
-                                    if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
-                                }
-                                val providerToUpdate = newProviders.find { it.type == p.type }
-                                if (providerToUpdate != null) {
-                                    modelRepo.updateProvider(providerToUpdate)
-                                }
-                                // Show message instead of fetching
-                                errorMessage = "请手动添加模型（获取模型列表功能尚未实现）"
-                                refreshProvider()
-                            } catch (e: Exception) {
-                                errorMessage = e.message ?: "获取失败"
-                            } finally {
-                                isFetching = false
                             }
+                        } else {
+                            errorMessage = "请先输入 API Key"
                         }
                     },
                     enabled = !isFetching,

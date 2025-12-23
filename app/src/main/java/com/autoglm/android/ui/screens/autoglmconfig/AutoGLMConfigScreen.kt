@@ -263,7 +263,98 @@ fun AutoGLMConfigScreen(
             }
             
             Spacer(modifier = Modifier.height(16.dp))
-            
+
+            // 高级设置
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Grey50)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "高级设置",
+                        style = ZiZipTypography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = Grey800
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Shower 虚拟屏幕开关
+                    var showerEnabled by remember { mutableStateOf(settingsRepo.isShowerEnabled()) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "虚拟屏幕模式 (Shower)",
+                                style = ZiZipTypography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = Grey800
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "使用虚拟屏幕进行自动化，截图更干净",
+                                style = ZiZipTypography.labelSmall,
+                                color = Grey500
+                            )
+                        }
+                        Switch(
+                            checked = showerEnabled,
+                            onCheckedChange = {
+                                showerEnabled = it
+                                settingsRepo.setShowerEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Accent,
+                                checkedTrackColor = Accent.copy(alpha = 0.5f),
+                                uncheckedThumbColor = Grey400,
+                                uncheckedTrackColor = Grey200
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 坐标系统选择
+                    var coordinateSystem by remember { mutableStateOf(settingsRepo.getCoordinateSystem()) }
+                    Text(
+                        "坐标系统",
+                        style = ZiZipTypography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = Grey800
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SettingsRepository.CoordinateSystem.values().forEach { system ->
+                            FilterChip(
+                                selected = coordinateSystem == system,
+                                onClick = {
+                                    coordinateSystem = system
+                                    settingsRepo.setCoordinateSystem(system)
+                                },
+                                label = { Text(system.displayName) },
+                                modifier = Modifier.weight(1f),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Accent,
+                                    selectedLabelColor = PrimaryWhite,
+                                    disabledContainerColor = Grey100
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    borderColor = Grey200,
+                                    selectedBorderColor = Accent
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // 恢复默认按钮
             TextButton(
                 onClick = {

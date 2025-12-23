@@ -84,32 +84,44 @@ class PhoneAgent(
         }
 
         // 初始化 Shower 虚拟屏幕
-        try {
-            val serverStarted = ShowerServerManager.ensureServerStarted(context)
-            if (serverStarted) {
-                val metrics = context.resources.displayMetrics
-                CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
-                val displayCreated = showerController.ensureDisplay(
-                    metrics.widthPixels,
-                    metrics.heightPixels,
-                    metrics.densityDpi,
-                    bitrateKbps = 3000
-                )
-                isShowerAvailable = displayCreated
-                Log.i(TAG, "Shower initialized: server=$serverStarted, display=$displayCreated")
+        val showerEnabled = settingsRepo.isShowerEnabled()
+        Log.i(TAG, "Shower enabled in settings: $showerEnabled")
 
-                // 显示虚拟屏幕边框
-                if (displayCreated) {
-                    setVirtualBorderVisible(true)
+        if (showerEnabled) {
+            try {
+                val serverStarted = ShowerServerManager.ensureServerStarted(context)
+                if (serverStarted) {
+                    val metrics = context.resources.displayMetrics
+                    CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
+                    val displayCreated = showerController.ensureDisplay(
+                        metrics.widthPixels,
+                        metrics.heightPixels,
+                        metrics.densityDpi,
+                        bitrateKbps = 3000
+                    )
+                    isShowerAvailable = displayCreated
+                    Log.i(TAG, "Shower initialized: server=$serverStarted, display=$displayCreated")
+
+                    // 显示虚拟屏幕边框
+                    if (displayCreated) {
+                        setVirtualBorderVisible(true)
+                    }
+                } else {
+                    Log.w(TAG, "Shower server not available, using fallback mode")
+                    isShowerAvailable = false
                 }
-            } else {
-                Log.w(TAG, "Shower server not available, using fallback mode")
+            } catch (e: Exception) {
+                Log.w(TAG, "Shower initialization failed, continuing without it", e)
                 isShowerAvailable = false
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Shower initialization failed, continuing without it", e)
+        } else {
+            Log.i(TAG, "Shower disabled in settings, skipping virtual display")
             isShowerAvailable = false
         }
+
+        // 即使不使用 Shower，也需要初始化坐标系统
+        val metrics = context.resources.displayMetrics
+        CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
 
         val execution = TaskExecution(
             taskDescription = taskDescription,
@@ -340,26 +352,43 @@ class PhoneAgent(
      */
     private fun parseAction(actionStr: String): AgentAction? {
         val trimmed = actionStr.trim()
-        
+
+        // 空动作检查
+        if (trimmed.isEmpty()) {
+            Log.w(TAG, "Empty action string")
+            return AgentAction.Finish("完成（无动作）")
+        }
+
         // 解析格式: action(params)
         val regex = Regex("""(\w+)\(([^)]*)\)""")
-        val match = regex.find(trimmed) ?: return null
-        
+        val match = regex.find(trimmed)
+
+        if (match == null) {
+            Log.w(TAG, "Failed to parse action: '$actionStr' (format mismatch)")
+            return null
+        }
+
         val actionName = match.groupValues[1].lowercase()
         val params = match.groupValues[2]
-        
+
         return when (actionName) {
             "launch" -> AgentAction.Launch(params.trim().removeSurrounding("\""))
             "tap" -> {
                 val coords = params.split(",").map { it.trim().toIntOrNull() ?: 0 }
-                if (coords.size >= 2) AgentAction.Tap(coords[0], coords[1]) else null
+                if (coords.size >= 2) AgentAction.Tap(coords[0], coords[1]) else {
+                    Log.w(TAG, "Invalid tap coordinates: $params")
+                    null
+                }
             }
             "type" -> AgentAction.Type(params.trim().removeSurrounding("\""))
             "swipe" -> {
                 val coords = params.split(",").map { it.trim().toIntOrNull() ?: 0 }
                 if (coords.size >= 4) {
                     AgentAction.Swipe(coords[0], coords[1], coords[2], coords[3], coords.getOrNull(4) ?: 300)
-                } else null
+                } else {
+                    Log.w(TAG, "Invalid swipe coordinates: $params (need x1,y1,x2,y2)")
+                    null
+                }
             }
             "back" -> AgentAction.Back
             "home" -> AgentAction.Home
@@ -369,7 +398,10 @@ class PhoneAgent(
             }
             "take_over", "takeover" -> AgentAction.TakeOver
             "finish", "done" -> AgentAction.Finish(params.trim().removeSurrounding("\""))
-            else -> null
+            else -> {
+                Log.w(TAG, "Unknown action type: '$actionName'")
+                null
+            }
         }
     }
     

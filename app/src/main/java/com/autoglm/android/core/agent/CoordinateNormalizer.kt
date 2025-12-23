@@ -38,10 +38,31 @@ object CoordinateNormalizer {
      * 检测坐标是否为归一化坐标
      * @param x X 坐标值
      * @param y Y 坐标值
-     * @return 如果两个坐标都在 0-1000 范围内，认为是归一化坐标
+     * @return 如果两个坐标都在 0-1000 范围内，且明显小于屏幕尺寸，认为是归一化坐标
+     *
+     * 检测逻辑：
+     * 1. 坐标必须在 0-1000 范围内
+     * 2. 对于宽度 > 1200 的屏幕，直接判定为归一化坐标
+     * 3. 对于小屏幕，检查坐标是否明显小于屏幕尺寸（留 10% 余量）
      */
     fun isNormalized(x: Int, y: Int): Boolean {
-        return x in 0..NORMALIZED_MAX && y in 0..NORMALIZED_MAX
+        // 基本范围检查
+        if (x !in 0..NORMALIZED_MAX || y !in 0..NORMALIZED_MAX) {
+            return false
+        }
+
+        // 对于大屏幕，1000 范围内的坐标肯定是归一化的
+        if (screenWidth > 1200 || screenHeight > 1200) {
+            return true
+        }
+
+        // 对于小屏幕，检查坐标是否明显小于屏幕尺寸
+        // 如果坐标值接近屏幕尺寸，可能是像素坐标
+        val xThreshold = (screenWidth * 0.9).toInt()
+        val yThreshold = (screenHeight * 0.9).toInt()
+
+        // 如果坐标值小于屏幕尺寸的 90%，判定为归一化坐标
+        return x < xThreshold || y < yThreshold
     }
 
     /**

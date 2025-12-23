@@ -54,7 +54,7 @@ class ShellVirtualDisplay(private val context: Context) {
         try {
             // 先移除已存在的
             if (isActive) {
-                removeDisplay()
+                displayId = null
             }
 
             // 方案：使用 wm create-display 创建虚拟显示
@@ -94,7 +94,7 @@ class ShellVirtualDisplay(private val context: Context) {
     /**
      * 查找虚拟屏幕的 Display ID
      */
-    private fun findDisplayId(): Int? {
+    private suspend fun findDisplayId(): Int? {
         // 通过 dumpsys display 查找
         val result = AndroidShellExecutor.executeCommand("dumpsys display displays")
         if (!result.success) return null

@@ -133,13 +133,18 @@ fun ProviderDetailScreen(
                     trailingIcon = {
                         IconButton(onClick = {
                             scope.launch {
-                                val p = provider ?: return@IconButton
-                                    val newProviders = modelRepo.providers.value.map { prov ->
-                                        if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
-                                    }
-                                    // Save via updateProvider
-                                    modelRepo.updateProvider(newProviders.find { it.type == p.type } ?: return@IconButton)
+                                val p = provider
+                                if (p == null) return@launch
+
+                                val newProviders = modelRepo.providers.value.map { prov ->
+                                    if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
+                                }
+                                // Save via updateProvider
+                                val providerToUpdate = newProviders.find { it.type == p.type }
+                                if (providerToUpdate != null) {
+                                    modelRepo.updateProvider(providerToUpdate)
                                     refreshProvider()
+                                }
                             }
                         }) {
                             Icon(Icons.Default.Save, contentDescription = "保存", tint = Accent)
@@ -156,20 +161,26 @@ fun ProviderDetailScreen(
                     onClick = {
                         if (apiKey.isBlank()) {
                             errorMessage = "请先输入 API Key"
-                            return@Button
+                            return@onClick
                         }
                         scope.launch {
                             isFetching = true
                             errorMessage = null
                             try {
-                                val p = provider ?: return@launch
+                                val p = provider ?: run {
+                                    errorMessage = "供应商未加载"
+                                    return@launch
+                                }
                                 val newProviders = modelRepo.providers.value.map { prov ->
                                     if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
                                 }
-                                modelRepo.updateProvider(newProviders.find { it.type == p.type } ?: return@launch)
+                                val providerToUpdate = newProviders.find { it.type == p.type }
+                                if (providerToUpdate != null) {
+                                    modelRepo.updateProvider(providerToUpdate)
+                                }
                                 // Show message instead of fetching
                                 errorMessage = "请手动添加模型（获取模型列表功能尚未实现）"
-                                    refreshProvider()
+                                refreshProvider()
                             } catch (e: Exception) {
                                 errorMessage = e.message ?: "获取失败"
                             } finally {

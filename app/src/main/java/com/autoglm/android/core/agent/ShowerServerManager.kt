@@ -56,13 +56,13 @@ object ShowerServerManager {
             DebugLogger.e(TAG, "  1. 从 GitHub 下载 Shower Server APK", null)
             DebugLogger.e(TAG, "  2. 在设备上安装 Shower Server", null)
             DebugLogger.e(TAG, "  3. 打开 Shower Server 应用一次", null)
-            return false
+            return@withContext false
         }
 
         // 检查是否已在运行
         if (isServerListening()) {
             DebugLogger.i(TAG, "✓ Shower Server 已在运行")
-            return true
+            return@withContext true
         }
 
         // 通过 am start-service 启动 Shower Server
@@ -84,7 +84,7 @@ object ShowerServerManager {
             delay(200)
             if (isServerListening()) {
                 DebugLogger.i(TAG, "✓ Shower Server 启动成功 (${(attempt + 1) * 200}ms)")
-                return true
+                return@withContext true
             }
         }
 
@@ -93,7 +93,7 @@ object ShowerServerManager {
         DebugLogger.e(TAG, "  1. 检查日志: adb shell cat /data/local/tmp/shower.log", null)
         DebugLogger.e(TAG, "  2. 检查进程: adb shell ps | grep shower", null)
         DebugLogger.e(TAG, "  3. 手动打开 Shower Server 应用", null)
-        return false
+        false
     }
 
     /**

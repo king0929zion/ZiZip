@@ -75,6 +75,7 @@ object ShowerServer {
         private var virtualDisplay: VirtualDisplay? = null
         private var imageReader: ImageReader? = null
         private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        private val inputInjector = InputInjector()
 
         override fun onOpen(conn: WebSocket, handshake: ClientHandshake?) {
             Log.i(TAG, "Client connected: ${conn.remoteSocketAddress}")
@@ -240,51 +241,46 @@ object ShowerServer {
             val coords = args.split(" ")
             if (coords.size != 2) return
 
-            val x = coords[0].toIntOrNull() ?: return
-            val y = coords[1].toIntOrNull() ?: return
+            val x = coords[0].toFloatOrNull() ?: return
+            val y = coords[1].toFloatOrNull() ?: return
 
-            // 通过 shell 注入点击事件
-            try {
-                val displayId = virtualDisplay?.display?.displayId ?: return
-                val process = Runtime.getRuntime().exec("input -d $displayId tap $x $y")
-                process.waitFor()
-                Log.d(TAG, "Tapped: ($x, $y) on display $displayId")
-            } catch (e: Exception) {
-                Log.e(TAG, "Tap failed", e)
-            }
+            // 设置目标显示 ID
+            inputInjector.displayId = virtualDisplay?.display?.displayId ?: 0
+
+            // 使用 InputInjector 注入点击事件
+            val success = inputInjector.tap(x, y)
+            Log.d(TAG, "Tapped: ($x, $y) success=$success")
         }
 
         private fun handleSwipe(args: String) {
             val parts = args.split(" ")
             if (parts.size != 5) return
 
-            val x1 = parts[0].toIntOrNull() ?: return
-            val y1 = parts[1].toIntOrNull() ?: return
-            val x2 = parts[2].toIntOrNull() ?: return
-            val y2 = parts[3].toIntOrNull() ?: return
+            val x1 = parts[0].toFloatOrNull() ?: return
+            val y1 = parts[1].toFloatOrNull() ?: return
+            val x2 = parts[2].toFloatOrNull() ?: return
+            val y2 = parts[3].toFloatOrNull() ?: return
             val duration = parts[4].toLongOrNull() ?: 300
 
-            try {
-                val displayId = virtualDisplay?.display?.displayId ?: return
-                val process = Runtime.getRuntime().exec("input -d $displayId swipe $x1 $y1 $x2 $y2 $duration")
-                process.waitFor()
-                Log.d(TAG, "Swiped: ($x1,$y1) -> ($x2,$y2) on display $displayId")
-            } catch (e: Exception) {
-                Log.e(TAG, "Swipe failed", e)
+            // 设置目标显示 ID
+            inputInjector.displayId = virtualDisplay?.display?.displayId ?: 0
+
+            // 使用 InputInjector 注入滑动事件
+            scope.launch {
+                val success = inputInjector.swipe(x1, y1, x2, y2, duration)
+                Log.d(TAG, "Swiped: ($x1,$y1) -> ($x2,$y2) success=$success")
             }
         }
 
         private fun handleKey(args: String) {
             val keyCode = args.toIntOrNull() ?: return
 
-            try {
-                val displayId = virtualDisplay?.display?.displayId ?: return
-                val process = Runtime.getRuntime().exec("input -d $displayId keyevent $keyCode")
-                process.waitFor()
-                Log.d(TAG, "Key: $keyCode on display $displayId")
-            } catch (e: Exception) {
-                Log.e(TAG, "Key failed", e)
-            }
+            // 设置目标显示 ID
+            inputInjector.displayId = virtualDisplay?.display?.displayId ?: 0
+
+            // 使用 InputInjector 注入按键事件
+            val success = inputInjector.key(keyCode)
+            Log.d(TAG, "Key: $keyCode success=$success")
         }
 
         private fun stopDisplay() {

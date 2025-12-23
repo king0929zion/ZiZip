@@ -11,10 +11,10 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build Release APK
+  build-zizip:
+    name: Build ZiZip APK
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -64,16 +64,51 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ZiZip-APK-${{ steps.version.outputs.date }}
+          name: ZiZip-APK
           path: app/build/outputs/apk/release/ZiZip-*.apk
+          retention-days: 30
+
+  build-shower-server:
+    name: Build Shower Server APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x tools/gradlew
+
+      - name: Build Shower Server APK
+        working-directory: tools
+        run: ./gradlew assembleRelease
+
+      - name: Rename APK
+        run: |
+          mv tools/app/build/outputs/apk/release/app-release.apk "tools/app/build/outputs/apk/release/ShowerServer.apk"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShowerServer-APK
+          path: tools/app/build/outputs/apk/release/ShowerServer.apk
           retention-days: 30
 
   release:
     name: Create Release
-    needs: build
+    needs: [build-zizip, build-shower-server]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -84,11 +119,9 @@ jobs:
           VERSION=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/' | tr -d ' \r\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Download APK Artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: ZiZip-APK-*
-          merge-multiple: true
           path: ./artifacts
 
       - name: Create Release
@@ -98,21 +131,35 @@ jobs:
           name: ZiZip v${{ steps.version.outputs.version }}
           body: |
             ## ZiZip v${{ steps.version.outputs.version }}
-            
+
             自动构建版本，提交: ${{ github.sha }}
-            
+
             ### 下载
-            - **APK**: 直接安装到 Android 设备
-            
-            ### 要求
+
+            #### 主应用
+            - **ZiZip-v*.apk**: ZiZip 主应用，直接安装到 Android 设备
+
+            #### 虚拟屏幕服务（Agent 模式需要）
+            - **ShowerServer.apk**: 虚拟屏幕服务，使用 Agent 模式前必须先安装此应用
+
+            ### 安装说明
+
+            1. 先安装 **ZiZip** 主应用
+            2. 如果要使用 **Agent 模式**，需要额外安装 **ShowerServer.apk**
+            3. 安装 ShowerServer 后，打开应用一次（初始化服务）
+            4. 返回 ZiZip，在设置中查看 Shower Server 状态
+
+            ### 系统要求
             - Android 8.0+ (API 26)
             - 无障碍服务权限
             - 悬浮窗权限
-            
+            - Agent 模式还需要 Shizuku 权限
+
             ### 更新内容
             查看提交历史了解详细变更。
           files: |
-            ./artifacts/*.apk
+            ./artifacts/ZiZip-APK/*.apk
+            ./artifacts/ShowerServer-APK/*.apk
           draft: false
           prerelease: false
         env:

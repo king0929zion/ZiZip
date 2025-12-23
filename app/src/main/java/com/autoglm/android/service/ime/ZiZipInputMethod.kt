@@ -79,6 +79,83 @@ class ZiZipInputMethod : InputMethodService() {
             )
             return settings == IME_ID
         }
+
+        /**
+         * 切换到 ZiZip 输入法
+         * 需要 WRITE_SECURE_SETTINGS 权限 (通过 Shizuku)
+         */
+        suspend fun switchToThisInputMethod(context: Context): Boolean {
+            if (isCurrentInputMethod(context)) {
+                Log.d(TAG, "ZiZip IME is already current")
+                return true
+            }
+
+            if (!isEnabled(context)) {
+                Log.e(TAG, "ZiZip IME is not enabled")
+                return false
+            }
+
+            return try {
+                // 使用 Shizuku 执行 settings 命令切换输入法
+                com.autoglm.android.core.shizuku.AndroidShellExecutor.executeCommand(
+                    "settings put secure default_input_method $IME_ID"
+                ).success
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to switch IME: ${e.message}", e)
+                false
+            }
+        }
+
+        /**
+         * 通过广播输入文本
+         */
+        fun inputTextViaBroadcast(context: Context, text: String): Boolean {
+            return try {
+                val intent = Intent(ACTION_INPUT_TEXT).apply {
+                    putExtra(EXTRA_TEXT, text)
+                    setPackage(context.packageName)
+                }
+                context.sendBroadcast(intent)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send broadcast: ${e.message}", e)
+                false
+            }
+        }
+
+        /**
+         * 通过广播输入 Base64 编码的文本
+         */
+        fun inputTextViaBase64Broadcast(context: Context, text: String): Boolean {
+            return try {
+                val encoded = Base64.encodeToString(text.toByteArray(), Base64.NO_WRAP)
+                val intent = Intent(ACTION_INPUT_B64).apply {
+                    putExtra(EXTRA_MSG, encoded)
+                    setPackage(context.packageName)
+                }
+                context.sendBroadcast(intent)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send base64 broadcast: ${e.message}", e)
+                false
+            }
+        }
+
+        /**
+         * 通过广播清除文本
+         */
+        fun clearTextViaBroadcast(context: Context): Boolean {
+            return try {
+                val intent = Intent(ACTION_CLEAR_TEXT).apply {
+                    setPackage(context.packageName)
+                }
+                context.sendBroadcast(intent)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send clear broadcast: ${e.message}", e)
+                false
+            }
+        }
     }
     
     private var statusView: TextView? = null

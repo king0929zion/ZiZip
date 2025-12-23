@@ -23,6 +23,17 @@ object ShowerServerManager {
     private const val SERVER_PORT = 8986
 
     /**
+     * 检查 JAR 文件是否存在
+     */
+    fun isJarAvailable(context: Context): Boolean {
+        return try {
+            context.assets.open(ASSET_JAR_NAME).use { it.available() > 0 }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * 确保服务器已启动
      */
     suspend fun ensureServerStarted(context: Context): Boolean {
@@ -32,11 +43,25 @@ object ShowerServerManager {
             return true
         }
 
+        // 检查 JAR 文件是否存在
+        if (!isJarAvailable(context)) {
+            Log.e(TAG, "shower-server.jar not found in assets. Please build and add the JAR file.")
+            Log.e(TAG, "To build: cd tools/shower && ./gradlew assembleDebug")
+            Log.e(TAG, "Then copy: cp tools/shower/app/build/outputs/apk/debug/*.jar app/src/main/assets/")
+            return false
+        }
+
         val appContext = context.applicationContext
         val jarFile = try {
             copyJarToExternalDir(appContext)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to copy shower-server.jar", e)
+            return false
+        }
+
+        // 检查文件是否存在且有内容
+        if (!jarFile.exists() || jarFile.length() == 0L) {
+            Log.e(TAG, "JAR file is empty or doesn't exist: ${jarFile.absolutePath}")
             return false
         }
 
@@ -55,13 +80,16 @@ object ShowerServerManager {
             return false
         }
 
-        // 启动服务器
-        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main &"
+        // 给予执行权限
+        val chmodCmd = "chmod +x $remoteJarPath"
+        AndroidShellExecutor.executeCommand(chmodCmd)
+
+        // 启动服务器（后台运行）
+        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main >/dev/null 2>&1 &"
         Log.d(TAG, "Starting server: $startCmd")
         val startResult = AndroidShellExecutor.executeCommand(startCmd)
         if (!startResult.success) {
-            Log.e(TAG, "Failed to start server: ${startResult.error}")
-            return false
+            Log.w(TAG, "Start command returned error, but server may still be starting: ${startResult.error}")
         }
 
         // 等待服务器启动（最多 10 秒）
@@ -95,20 +123,14 @@ object ShowerServerManager {
             baseDir.mkdirs()
         }
         val outFile = File(baseDir, LOCAL_JAR_NAME)
-        
-        try {
-            context.assets.open(ASSET_JAR_NAME).use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output)
-                }
+
+        context.assets.open(ASSET_JAR_NAME).use { input ->
+            FileOutputStream(outFile).use { output ->
+                input.copyTo(output)
             }
-            Log.d(TAG, "Copied $ASSET_JAR_NAME to ${outFile.absolutePath}")
-        } catch (e: Exception) {
-            Log.w(TAG, "Asset $ASSET_JAR_NAME not found, using placeholder")
-            // 如果 assets 中没有 jar，创建一个占位文件
-            // 实际使用时需要添加真正的 shower-server.jar
         }
-        
+        Log.d(TAG, "Copied $ASSET_JAR_NAME to ${outFile.absolutePath} (${outFile.length()} bytes)")
+
         outFile
     }
 

@@ -329,12 +329,19 @@ object ShowerController {
 
     /**
      * 关闭连接
+     * 确保正确关闭 WebSocket 并清理资源
      */
     fun shutdown() {
         DebugLogger.d(TAG, "关闭连接")
         try {
             sendText("DESTROY_DISPLAY")
             webSocket?.close(1000, "Client shutdown")
+            // 取消WebSocket以确保连接被关闭
+            try {
+                webSocket?.cancel()
+            } catch (e: Exception) {
+                // ignore
+            }
         } catch (e: Exception) {
             DebugLogger.e(TAG, "关闭时出错", e)
         } finally {
@@ -344,6 +351,9 @@ object ShowerController {
             videoWidth = 0
             videoHeight = 0
             binaryHandler = null
+            // 清理 deferred 防止下次连接时使用旧的
+            connectingDeferred?.complete(false)
+            connectingDeferred = null
         }
     }
 }

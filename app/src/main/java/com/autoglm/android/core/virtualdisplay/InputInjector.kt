@@ -9,10 +9,6 @@ import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.autoglm.android.core.debug.DebugLogger
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.lang.reflect.Method
 
 /**
  * ZiZip 内置输入事件注入器
@@ -26,8 +22,8 @@ class InputInjector {
     }
 
     private val inputManager: Any
-    private val injectInputEventMethod: Method
-    private val setDisplayIdMethod: Method?
+    private val injectInputEventMethod: java.lang.reflect.Method
+    private val setDisplayIdMethod: java.lang.reflect.Method?
 
     var displayId: Int = 0
         set(value) {
@@ -99,59 +95,26 @@ class InputInjector {
 
     /**
      * 点击
-     * @param x X 坐标
-     * @param y Y 坐标
      */
     fun injectTap(x: Float, y: Float): Boolean {
         DebugLogger.d(TAG, "TAP: ($x, $y)")
-
         val now = SystemClock.uptimeMillis()
 
         // DOWN 事件
-        val down = MotionEvent.obtain(
-            now, now,
-            MotionEvent.ACTION_DOWN,
-            x, y,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
         down.source = InputDevice.SOURCE_TOUCHSCREEN
         val downResult = injectEvent(down)
-        down.recycle()
-
-        // 短暂延迟
-        try {
-            Thread.sleep(10)
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
 
         // UP 事件
-        val up = MotionEvent.obtain(
-            now, now + 10,
-            MotionEvent.ACTION_UP,
-            x, y,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val up = MotionEvent.obtain(now, now + 10, MotionEvent.ACTION_UP, x, y, 0)
         up.source = InputDevice.SOURCE_TOUCHSCREEN
         val upResult = injectEvent(up)
-        up.recycle()
 
         return downResult && upResult
     }
 
     /**
      * 滑动
-     * @param x1 起点 X
-     * @param y1 起点 Y
-     * @param x2 终点 X
-     * @param y2 终点 Y
-     * @param durationMs 持续时间（毫秒）
      */
     suspend fun injectSwipe(
         x1: Float,
@@ -159,25 +122,16 @@ class InputInjector {
         x2: Float,
         y2: Float,
         durationMs: Long
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): Boolean {
         DebugLogger.d(TAG, "SWIPE: ($x1,$y1) -> ($x2,$y2), ${durationMs}ms")
 
         val startTime = SystemClock.uptimeMillis()
         val endTime = startTime + durationMs
 
         // DOWN 事件
-        val down = MotionEvent.obtain(
-            startTime, startTime,
-            MotionEvent.ACTION_DOWN,
-            x1, y1,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val down = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, x1, y1, 0)
         down.source = InputDevice.SOURCE_TOUCHSCREEN
         injectEvent(down)
-        down.recycle()
 
         // 分步移动
         val steps = 10
@@ -187,40 +141,20 @@ class InputInjector {
             val y = y1 + (y2 - y1) * t
             val eventTime = startTime + (durationMs * t).toLong()
 
-            val move = MotionEvent.obtain(
-                startTime, eventTime,
-                MotionEvent.ACTION_MOVE,
-                x, y,
-                0,
-                0f, 0f,
-                0, 0f, 0, 0,
-                0, 0
-            )
+            val move = MotionEvent.obtain(startTime, eventTime, MotionEvent.ACTION_MOVE, x, y, 0)
             move.source = InputDevice.SOURCE_TOUCHSCREEN
             injectEvent(move)
-            move.recycle()
 
             val stepDelay = (durationMs / steps).toLong()
             if (stepDelay > 0) {
-                delay(stepDelay)
+                kotlinx.coroutines.delay(stepDelay)
             }
         }
 
         // UP 事件
-        val up = MotionEvent.obtain(
-            startTime, endTime,
-            MotionEvent.ACTION_UP,
-            x2, y2,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val up = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, x2, y2, 0)
         up.source = InputDevice.SOURCE_TOUCHSCREEN
-        val result = injectEvent(up)
-        up.recycle()
-
-        result
+        return injectEvent(up)
     }
 
     /**
@@ -231,15 +165,7 @@ class InputInjector {
         touchDownTime = SystemClock.uptimeMillis()
         touchActive = true
 
-        val event = MotionEvent.obtain(
-            touchDownTime, touchDownTime,
-            MotionEvent.ACTION_DOWN,
-            x, y,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val event = MotionEvent.obtain(touchDownTime, touchDownTime, MotionEvent.ACTION_DOWN, x, y, 0)
         event.source = InputDevice.SOURCE_TOUCHSCREEN
         return injectEvent(event)
     }
@@ -253,15 +179,7 @@ class InputInjector {
         }
 
         val now = SystemClock.uptimeMillis()
-        val event = MotionEvent.obtain(
-            touchDownTime, now,
-            MotionEvent.ACTION_MOVE,
-            x, y,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val event = MotionEvent.obtain(touchDownTime, now, MotionEvent.ACTION_MOVE, x, y, 0)
         event.source = InputDevice.SOURCE_TOUCHSCREEN
         return injectEvent(event)
     }
@@ -276,15 +194,7 @@ class InputInjector {
         }
 
         val now = SystemClock.uptimeMillis()
-        val event = MotionEvent.obtain(
-            touchDownTime, now,
-            MotionEvent.ACTION_UP,
-            x, y,
-            0,
-            0f, 0f,
-            0, 0f, 0, 0,
-            0, 0
-        )
+        val event = MotionEvent.obtain(touchDownTime, now, MotionEvent.ACTION_UP, x, y, 0)
         event.source = InputDevice.SOURCE_TOUCHSCREEN
         touchActive = false
         return injectEvent(event)
@@ -292,7 +202,6 @@ class InputInjector {
 
     /**
      * 按键
-     * @param keyCode 按键码（如 KeyEvent.KEYCODE_BACK）
      */
     fun injectKey(keyCode: Int): Boolean {
         DebugLogger.d(TAG, "KEY: $keyCode")
@@ -314,7 +223,6 @@ class InputInjector {
 
     /**
      * 输入文本
-     * @param text 要输入的文本
      */
     fun injectText(text: String): Boolean {
         DebugLogger.d(TAG, "TEXT: \"$text\"")

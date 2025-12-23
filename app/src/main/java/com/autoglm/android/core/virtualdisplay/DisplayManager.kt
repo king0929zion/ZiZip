@@ -25,7 +25,7 @@ import java.io.File
  * 2. 使用 screencap -d <display_id> 截图指定屏幕
  * 3. 使用 input -d <display_id> 注入事件到指定屏幕
  */
-class VirtualDisplayManager(private val context: Context) {
+class ShellVirtualDisplay(private val context: Context) {
 
     companion object {
         private const val TAG = "VirtualDisplayManager"
@@ -156,7 +156,7 @@ class VirtualDisplayManager(private val context: Context) {
      * 注入点击事件
      * 使用 input -d <display_id> tap
      */
-    fun tap(x: Int, y: Int): Boolean {
+    suspend fun tap(x: Int, y: Int): Boolean {
         val id = displayId ?: run {
             DebugLogger.w(TAG, "虚拟屏幕未激活，无法点击", null)
             return false
@@ -188,7 +188,7 @@ class VirtualDisplayManager(private val context: Context) {
     /**
      * 注入按键事件
      */
-    fun key(keyCode: Int): Boolean {
+    suspend fun key(keyCode: Int): Boolean {
         val id = displayId ?: run {
             DebugLogger.w(TAG, "虚拟屏幕未激活，无法按键", null)
             return false
@@ -204,7 +204,7 @@ class VirtualDisplayManager(private val context: Context) {
     /**
      * 移除虚拟屏幕
      */
-    fun removeDisplay() {
+    suspend fun removeDisplay() {
         val id = displayId
         if (id == null) {
             DebugLogger.d(TAG, "没有活动虚拟屏幕")

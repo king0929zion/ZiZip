@@ -202,8 +202,8 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
                     _videoHeight.value = height
                 }
 
-                // Video streaming is enabled when display is created
-                _isStreaming.value = controller.isVideoStreaming()
+                // Video streaming status
+                _isStreaming.value = controller.isConnected()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect to virtual display", e)

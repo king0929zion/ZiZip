@@ -70,7 +70,7 @@ class ScreenController(private val context: Context) {
     /**
      * 点击
      */
-    fun tap(x: Int, y: Int): Boolean {
+    suspend fun tap(x: Int, y: Int): Boolean {
         DebugLogger.d(TAG, "TAP: ($x, $y)")
         val result = AndroidShellExecutor.executeCommand("input tap $x $y")
         return result.success
@@ -88,7 +88,7 @@ class ScreenController(private val context: Context) {
     /**
      * 按键
      */
-    fun key(keyCode: Int): Boolean {
+    suspend fun key(keyCode: Int): Boolean {
         DebugLogger.d(TAG, "KEY: $keyCode")
         val result = AndroidShellExecutor.executeCommand("input keyevent $keyCode")
         return result.success
@@ -106,12 +106,12 @@ class ScreenController(private val context: Context) {
     /**
      * 返回键
      */
-    fun pressBack(): Boolean = key(4)
+    suspend fun pressBack(): Boolean = key(4)
 
     /**
      * Home 键
      */
-    fun pressHome(): Boolean = key(3)
+    suspend fun pressHome(): Boolean = key(3)
 
     /**
      * 获取屏幕尺寸

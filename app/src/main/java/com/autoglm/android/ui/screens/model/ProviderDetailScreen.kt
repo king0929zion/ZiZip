@@ -45,8 +45,14 @@ fun ProviderDetailScreen(
     var modelToEdit by remember { mutableStateOf<ModelConfig?>(null) }
     var modelToDelete by remember { mutableStateOf<ModelConfig?>(null) }
     
-    val selectedModelIds by modelRepo.selectedModelIds.collectAsState()
-    val activeModelId by modelRepo.activeModelId.collectAsState()
+    var selectedModelIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var activeModelId by remember { mutableStateOf<String?>(null) }
+    
+    // 加载状态
+    LaunchedEffect(Unit) {
+        selectedModelIds = modelRepo.selectedModelIds.value
+        activeModelId = modelRepo.activeModelId.value
+    }
     
     // 加载供应商
     LaunchedEffect(providerType) {
@@ -90,7 +96,7 @@ fun ProviderDetailScreen(
                     IconButton(onClick = { showAddModelDialog = true }) {
                         Icon(Icons.Default.Add, contentDescription = "添加模型")
                     }
-                    if (provider?.isBuiltIn == false) {
+                    if (provider?.builtIn == false && provider?.type?.builtIn == false) {
                         IconButton(onClick = { /* TODO: 删除供应商 */ }) {
                             Icon(Icons.Outlined.Delete, contentDescription = "删除", tint = ErrorColor)
                         }
@@ -127,10 +133,13 @@ fun ProviderDetailScreen(
                     trailingIcon = {
                         IconButton(onClick = {
                             scope.launch {
-                                provider?.let {
-                                    modelRepo.updateProviderApiKey(it.type, apiKey)
+                                val p = provider ?: return@IconButton
+                                    val newProviders = modelRepo.providers.value.map { prov ->
+                                        if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
+                                    }
+                                    // Save via updateProvider
+                                    modelRepo.updateProvider(newProviders.find { it.type == p.type } ?: return@IconButton)
                                     refreshProvider()
-                                }
                             }
                         }) {
                             Icon(Icons.Default.Save, contentDescription = "保存", tint = Accent)
@@ -153,11 +162,14 @@ fun ProviderDetailScreen(
                             isFetching = true
                             errorMessage = null
                             try {
-                                provider?.let {
-                                    modelRepo.updateProviderApiKey(it.type, apiKey)
-                                    modelRepo.fetchModelsFromApi(it.type)
-                                    refreshProvider()
+                                val p = provider ?: return@launch
+                                val newProviders = modelRepo.providers.value.map { prov ->
+                                    if (prov.type == p.type) prov.copy(apiKey = apiKey) else prov
                                 }
+                                modelRepo.updateProvider(newProviders.find { it.type == p.type } ?: return@launch)
+                                // Show message instead of fetching
+                                errorMessage = "请手动添加模型（获取模型列表功能尚未实现）"
+                                    refreshProvider()
                             } catch (e: Exception) {
                                 errorMessage = e.message ?: "获取失败"
                             } finally {
@@ -237,18 +249,24 @@ fun ProviderDetailScreen(
                         isDefault = model.id == activeModelId,
                         onToggle = {
                             scope.launch {
-                                val success = modelRepo.toggleModelSelection(model.id)
-                                if (!success) {
-                                    // 达到最大选择数量
+                                val currentIds = selectedModelIds.toMutableSet()
+                                if (model.id in currentIds) {
+                                    currentIds.remove(model.id)
+                                } else if (currentIds.size < 5) {
+                                    currentIds.add(model.id)
                                 }
+                                selectedModelIds = currentIds
                             }
                         },
                         onSetDefault = {
                             scope.launch {
-                                if (model.id !in selectedModelIds) {
-                                    modelRepo.toggleModelSelection(model.id)
+                                val currentIds = selectedModelIds.toMutableSet()
+                                if (model.id !in currentIds && currentIds.size < 5) {
+                                    currentIds.add(model.id)
+                                    selectedModelIds = currentIds
                                 }
                                 modelRepo.setActiveModel(model.id)
+                                activeModelId = model.id
                             }
                         },
                         onEdit = { modelToEdit = model },
@@ -293,8 +311,13 @@ fun ProviderDetailScreen(
             onDismiss = { showAddModelDialog = false },
             onAdd = { modelId, displayName ->
                 scope.launch {
-                    provider?.let {
-                        modelRepo.addManualModel(it.type, modelId, displayName)
+                    provider?.let { p ->
+                        val newModel = ModelConfig(
+                            displayName = displayName ?: modelId.substringAfterLast("/"),
+                            modelName = modelId,
+                            providerType = p.type
+                        )
+                        modelRepo.addModel(newModel)
                         refreshProvider()
                     }
                 }
@@ -309,12 +332,12 @@ fun ProviderDetailScreen(
             model = model,
             onDismiss = { modelToEdit = null },
             onSave = { modelId, displayName ->
-                scope.launch {
-                    provider?.let {
-                        modelRepo.updateModel(model.id, modelId, displayName)
-                        refreshProvider()
-                    }
-                }
+                    val updatedModel = model.copy(
+                        modelName = modelId,
+                        displayName = displayName ?: modelId.substringAfterLast("/")
+                    )
+                    modelRepo.updateModel(updatedModel)
+                    refreshProvider()
                 modelToEdit = null
             }
         )

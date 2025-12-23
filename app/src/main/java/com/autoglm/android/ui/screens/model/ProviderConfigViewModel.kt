@@ -43,7 +43,7 @@ class ProviderConfigViewModel(application: Application) : AndroidViewModel(appli
     
     private fun loadData() {
         viewModelScope.launch {
-            modelRepo.initialize()
+            // 直接更新状态，不调用 suspend 函数
             updateState()
         }
     }
@@ -52,37 +52,37 @@ class ProviderConfigViewModel(application: Application) : AndroidViewModel(appli
         val providers = modelRepo.providers.value
         val models = modelRepo.models.value
         val activeModelId = modelRepo.activeModelId.value
-        val selectedIds = modelRepo.selectedModelIds.value
-        
-        val selectedModels = models.filter { it.id in selectedIds }
-        val activeModel = models.find { it.id == activeModelId }
+        val enabledModels = models.filter { it.enabled }
         
         _uiState.value = ProviderConfigUiState(
             isLoading = false,
             providers = providers,
-            activeModel = activeModel,
+            activeModel = models.find { it.id == activeModelId },
             activeModelId = activeModelId,
-            selectedModels = selectedModels,
-            selectedModelCount = selectedIds.size,
-            selectedModelIds = selectedIds
+            selectedModels = enabledModels,
+            selectedModelCount = enabledModels.size,
+            selectedModelIds = enabledModels.map { it.id }.toSet()
         )
     }
     
     fun setActiveModel(modelId: String) {
-        viewModelScope.launch {
-            modelRepo.setActiveModel(modelId)
-            updateState()
-        }
+        modelRepo.setActiveModel(modelId)
+        updateState()
     }
     
     fun addCustomProvider(name: String, baseUrl: String) {
-        viewModelScope.launch {
-            modelRepo.addCustomProvider(name, baseUrl)
-            updateState()
-        }
+        val provider = ProviderConfig(
+            name = name,
+            type = ModelProviderType.CUSTOM,
+            baseUrl = baseUrl,
+            builtIn = false
+        )
+        modelRepo.addProvider(provider)
+        updateState()
     }
     
     fun refreshProviders() {
         updateState()
     }
 }
+

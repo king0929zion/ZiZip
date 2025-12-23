@@ -277,7 +277,7 @@ private fun ProviderCard(
                         style = ZiZipTypography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                         color = Grey800
                     )
-                    if (!provider.isBuiltIn) {
+                    if (!provider.builtIn && !provider.type.builtIn) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -319,9 +319,21 @@ private fun getProviderIcon(type: ModelProviderType): androidx.compose.ui.graphi
     return when (type) {
         ModelProviderType.OPENAI -> Icons.Default.AutoAwesome
         ModelProviderType.DEEPSEEK -> Icons.Default.WaterDrop
-        ModelProviderType.SILICONFLOW -> Icons.Default.Memory
+        ModelProviderType.SILICONFLOW, ModelProviderType.SILICON_FLOW -> Icons.Default.Memory
         ModelProviderType.ZHIPU -> Icons.Default.Psychology
-        ModelProviderType.CUSTOM -> Icons.Default.Cloud
+        ModelProviderType.GOOGLE, ModelProviderType.GEMINI -> Icons.Default.Star
+        ModelProviderType.ANTHROPIC -> Icons.Default.SmartToy
+        ModelProviderType.OPENROUTER -> Icons.Default.Router
+        ModelProviderType.GROQ -> Icons.Default.Speed
+        ModelProviderType.XAI -> Icons.Default.Code
+        ModelProviderType.MODELSCOPE, ModelProviderType.MODEL_SCOPE -> Icons.Default.Hub
+        ModelProviderType.NVIDIA -> Icons.Default.DeveloperBoard
+        ModelProviderType.MOONSHOT -> Icons.Default.Nightlight
+        ModelProviderType.QWEN -> Icons.Default.Chat
+        ModelProviderType.STEPFUN -> Icons.Default.Stairs
+        ModelProviderType.VOLCENGINE -> Icons.Default.Whatshot
+        ModelProviderType.HUNYUAN -> Icons.Default.Cloud
+        ModelProviderType.CUSTOM, ModelProviderType.OPENAI_COMPATIBLE -> Icons.Default.Cloud
     }
 }
 

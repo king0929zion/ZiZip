@@ -168,7 +168,12 @@ fun HomeScreen(
                     },
                     isEnabled = uiState.isInitialized && !uiState.isChatRunning,
                     isAgentRunning = uiState.currentExecution?.isActive == true,
-                    onStop = { viewModel.stopTask() }
+                    onStop = { viewModel.stopTask() },
+                    selectedTool = uiState.selectedTool,
+                    onToolSelect = { viewModel.selectTool(it) },
+                    onImageClick = { /* TODO: 实现图片选择 */ },
+                    attachedImages = uiState.attachedImages,
+                    onRemoveImage = { viewModel.removeImage(it) }
                 )
             }
         }
@@ -529,9 +534,15 @@ private fun InputBar(
     isEnabled: Boolean,
     isAgentRunning: Boolean,
     onStop: () -> Unit,
+    selectedTool: ToolType = ToolType.NONE,
+    onToolSelect: (ToolType) -> Unit = {},
+    onImageClick: () -> Unit = {},
+    attachedImages: List<String> = emptyList(),
+    onRemoveImage: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val hasText = text.isNotBlank()
+    val hasText = text.isNotBlank() || attachedImages.isNotEmpty()
+    var showToolSelector by remember { mutableStateOf(false) }
     
     // 整个输入区域容器 - 向下圆角
     Column(
@@ -541,6 +552,49 @@ private fun InputBar(
             .background(PrimaryWhite)
             .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
+        // 已选择的图片预览
+        if (attachedImages.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                attachedImages.forEachIndexed { index, _ ->
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Grey100)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Image,
+                            contentDescription = null,
+                            tint = Grey400,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .align(Alignment.Center)
+                        )
+                        // 删除按钮
+                        IconButton(
+                            onClick = { onRemoveImage(index) },
+                            modifier = Modifier
+                                .size(20.dp)
+                                .align(Alignment.TopEnd)
+                                .background(Grey700.copy(alpha = 0.7f), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "删除",
+                                tint = PrimaryWhite,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
         // 输入框 - 一体化设计，无边框，透明背景
         OutlinedTextField(
             value = text,
@@ -549,7 +603,11 @@ private fun InputBar(
             enabled = isEnabled,
             placeholder = {
                 Text(
-                    text = if (!isEnabled) "处理中..." else "Reply to Claude...",
+                    text = when {
+                        !isEnabled -> "处理中..."
+                        selectedTool == ToolType.AGENT -> "描述你想让 Agent 执行的任务..."
+                        else -> "Reply to Claude..."
+                    },
                     color = Grey400,
                     style = ZiZipTypography.bodyMedium
                 )
@@ -578,7 +636,7 @@ private fun InputBar(
             // 左侧工具
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(
-                    onClick = { /* TODO: 添加图片 */ },
+                    onClick = onImageClick,
                     enabled = isEnabled,
                     modifier = Modifier.size(40.dp)
                 ) {
@@ -589,17 +647,74 @@ private fun InputBar(
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                IconButton(
-                    onClick = { /* TODO: 工具选择 */ },
-                    enabled = isEnabled,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Handyman,
-                        contentDescription = "工具",
-                        tint = if (isEnabled) Grey600 else Grey400,
-                        modifier = Modifier.size(22.dp)
-                    )
+                // 工具选择按钮
+                Box {
+                    IconButton(
+                        onClick = { showToolSelector = true },
+                        enabled = isEnabled,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (selectedTool == ToolType.AGENT) 
+                                Icons.Filled.AutoAwesome else Icons.Outlined.Handyman,
+                            contentDescription = "工具",
+                            tint = if (selectedTool == ToolType.AGENT) Accent 
+                                   else if (isEnabled) Grey600 else Grey400,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    
+                    // 工具选择下拉菜单
+                    DropdownMenu(
+                        expanded = showToolSelector,
+                        onDismissRequest = { showToolSelector = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("不使用工具") },
+                            onClick = { 
+                                onToolSelect(ToolType.NONE)
+                                showToolSelector = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.ChatBubbleOutline, null)
+                            },
+                            trailingIcon = {
+                                if (selectedTool == ToolType.NONE) {
+                                    Icon(Icons.Default.Check, null, tint = Accent)
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Agent") },
+                            onClick = { 
+                                onToolSelect(ToolType.AGENT)
+                                showToolSelector = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.AutoAwesome, null)
+                            },
+                            trailingIcon = {
+                                if (selectedTool == ToolType.AGENT) {
+                                    Icon(Icons.Default.Check, null, tint = Accent)
+                                }
+                            }
+                        )
+                    }
+                }
+                
+                // 显示当前选择的工具
+                if (selectedTool == ToolType.AGENT) {
+                    Surface(
+                        color = Accent.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            "Agent",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = ZiZipTypography.labelSmall,
+                            color = Accent
+                        )
+                    }
                 }
             }
             

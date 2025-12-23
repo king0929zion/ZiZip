@@ -6,6 +6,8 @@ on:
     paths:
       - 'tools/**'
       - '.github/workflows/build-shower-server.yml'
+    branches:
+      - main
   workflow_call:
 
 # 设置 GitHub Actions 权限
@@ -34,27 +36,55 @@ jobs:
       - name: Build Shower Server APK
         run: |
           cd tools
-          ./gradlew assembleDebug --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleRelease --stacktrace --no-daemon --max-workers=2
 
-      - name: Copy APK to assets
+      - name: Get version
+        id: version
         run: |
-          mkdir -p app/src/main/assets
-          cp tools/app/build/outputs/apk/debug/app-debug.apk app/src/main/assets/shower-server.apk
-          ls -la app/src/main/assets/
+          cd tools
+          VERSION=$(./gradlew printVersion -q | grep -oP '(?<=Version: ).*' || echo "1.0.0")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
 
-      - name: Verify APK size
+      - name: Verify APK
         run: |
-          SIZE=$(stat -f%z app/src/main/assets/shower-server.apk 2>/dev/null || stat -c%s app/src/main/assets/shower-server.apk 2>/dev/null)
+          APK_PATH="tools/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "Error: APK not found at $APK_PATH"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$APK_PATH" 2>/dev/null || stat -f%z "$APK_PATH" 2>/dev/null)
           if [ "$SIZE" -lt 1000 ]; then
             echo "Error: APK is too small ($SIZE bytes)"
             exit 1
           fi
           echo "APK size: $SIZE bytes"
 
-      - name: Commit APK
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/assets/shower-server.apk
-          git diff --staged --quiet || git commit -m "chore: update shower-server.apk [skip ci]"
-          git push
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: shower-server-v${{ steps.version.outputs.version }}
+          name: Shower Server v${{ steps.version.outputs.version }}
+          body: |
+            ## Shower Server 虚拟屏幕服务
+
+            Shower Server 是一个独立应用，为 ZiZip 提供虚拟屏幕功能。
+
+            ### 安装方法
+            1. 下载 `shower-server.apk`
+            2. 在 Android 设备上安装 APK
+            3. 打开 Shower Server 应用一次（初始化服务）
+            4. 返回 ZiZip 使用 Agent 模式
+
+            ### 系统要求
+            - Android 7.0 (API 24) 或更高版本
+            - 与 ZiZip 配合使用
+
+            ### 包名
+            `com.ai.assistance.shower`
+          files: tools/app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

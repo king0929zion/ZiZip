@@ -51,7 +51,8 @@ data class TaskExecution(
     val currentStep: Int = 0,
     val startTime: Long = System.currentTimeMillis(),
     val endTime: Long? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val debugInfo: String? = null
 ) {
     val stepCount: Int
         get() = steps.size
@@ -83,7 +84,8 @@ data class TaskExecution(
         steps: List<StepRecord>? = null,
         currentStep: Int? = null,
         endTime: Long? = null,
-        errorMessage: String? = null
+        errorMessage: String? = null,
+        debugInfo: String? = null
     ): TaskExecution = TaskExecution(
         taskId = this.taskId,
         taskDescription = this.taskDescription,
@@ -93,6 +95,7 @@ data class TaskExecution(
         currentStep = currentStep ?: this.currentStep,
         startTime = this.startTime,
         endTime = endTime ?: this.endTime,
-        errorMessage = errorMessage ?: this.errorMessage
+        errorMessage = errorMessage ?: this.errorMessage,
+        debugInfo = debugInfo ?: this.debugInfo
     )
 }

@@ -3,6 +3,7 @@ package com.autoglm.android.core.agent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.autoglm.android.core.debug.DebugLogger
 import com.autoglm.android.core.shizuku.AndroidShellExecutor
 import com.autoglm.android.core.shizuku.ShizukuAuthorizer
 import com.autoglm.android.data.model.StepRecord
@@ -71,57 +72,81 @@ class PhoneAgent(
      * 执行任务
      */
     suspend fun runTask(taskDescription: String): TaskExecution = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Starting task: $taskDescription")
+        DebugLogger.i(TAG, "========== 任务开始 ==========")
+        DebugLogger.i(TAG, "任务描述: $taskDescription")
 
         // 检查权限
+        DebugLogger.d(TAG, "检查 Shizuku 权限...")
         if (!ShizukuAuthorizer.hasShizukuPermission()) {
-            Log.e(TAG, "No Shizuku permission")
+            DebugLogger.e(TAG, "缺少 Shizuku 权限", null)
+            DebugLogger.e(TAG, "解决方法: 打开 Shizuku app 并授权 ZiZip", null)
             return@withContext TaskExecution(
                 taskDescription = taskDescription,
                 status = TaskStatus.FAILED,
-                errorMessage = "缺少 Shizuku 权限"
+                errorMessage = "缺少 Shizuku 权限。请打开 Shizuku app 授权 ZiZip。",
+                debugInfo = buildString {
+                    """
+                    1. 确认 Shizuku app 已安装
+                    2. 打开 Shizuku app
+                    3. 找到 ZiZip 并点击授权
+                    4. 返回 ZiZip 重试
+                    """.trimIndent()
+                }
             )
         }
+        DebugLogger.i(TAG, "✓ Shizuku 权限已授予")
 
         // 初始化 Shower 虚拟屏幕
         val showerEnabled = settingsRepo.isShowerEnabled()
-        Log.i(TAG, "Shower enabled in settings: $showerEnabled")
+        DebugLogger.i(TAG, "Shower 设置: ${if (showerEnabled) "启用" else "禁用"}")
 
         if (showerEnabled) {
             try {
+                DebugLogger.d(TAG, "初始化 Shower 虚拟屏幕...")
+                DebugLogger.d(TAG, "1. 启动 Shower 服务器...")
                 val serverStarted = ShowerServerManager.ensureServerStarted(context)
-                if (serverStarted) {
-                    val metrics = context.resources.displayMetrics
-                    CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
-                    val displayCreated = showerController.ensureDisplay(
-                        metrics.widthPixels,
-                        metrics.heightPixels,
-                        metrics.densityDpi,
-                        bitrateKbps = 3000
-                    )
-                    isShowerAvailable = displayCreated
-                    Log.i(TAG, "Shower initialized: server=$serverStarted, display=$displayCreated")
 
-                    // 显示虚拟屏幕边框
-                    if (displayCreated) {
-                        setVirtualBorderVisible(true)
-                    }
+                if (serverStarted) {
+                    DebugLogger.i(TAG, "  ✓ Shower 服务器已启动")
                 } else {
-                    Log.w(TAG, "Shower server not available, using fallback mode")
-                    isShowerAvailable = false
+                    DebugLogger.w(TAG, "  ✗ Shower 服务器启动失败")
+                    DebugLogger.w(TAG, "    原因: shower-server.apk 不存在或启动失败")
+                    DebugLogger.w(TAG, "    影响: 将使用普通截图模式（无虚拟屏幕）")
+                }
+
+                DebugLogger.d(TAG, "2. 创建虚拟显示器...")
+                val metrics = context.resources.displayMetrics
+                CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
+                val displayCreated = showerController.ensureDisplay(
+                    metrics.widthPixels,
+                    metrics.heightPixels,
+                    metrics.densityDpi,
+                    bitrateKbps = 3000
+                )
+                isShowerAvailable = displayCreated
+
+                if (displayCreated) {
+                    DebugLogger.i(TAG, "  ✓ 虚拟显示器已创建 (${metrics.widthPixels}x${metrics.heightPixels})")
+                } else {
+                    DebugLogger.w(TAG, "  ✗ 虚拟显示器创建失败")
+                }
+
+                // 显示虚拟屏幕边框
+                if (displayCreated) {
+                    setVirtualBorderVisible(true)
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Shower initialization failed, continuing without it", e)
+                DebugLogger.e(TAG, "Shower 初始化异常: ${e.message}", e)
+                DebugLogger.w(TAG, "继续使用普通模式（降级）")
                 isShowerAvailable = false
             }
-        } else {
-            Log.i(TAG, "Shower disabled in settings, skipping virtual display")
-            isShowerAvailable = false
         }
 
-        // 即使不使用 Shower，也需要初始化坐标系统
+        // 初始化坐标系统
         val metrics = context.resources.displayMetrics
         CoordinateNormalizer.init(metrics.widthPixels, metrics.heightPixels)
+        DebugLogger.d(TAG, "屏幕尺寸: ${metrics.widthPixels}x${metrics.heightPixels}")
+        DebugLogger.d(TAG, "坐标系统: ${settingsRepo.getCoordinateSystem()}")
 
         val execution = TaskExecution(
             taskDescription = taskDescription,
@@ -133,22 +158,39 @@ class PhoneAgent(
         try {
             var stepCount = 0
             var shouldContinue = true
-            
+
             while (shouldContinue && stepCount < MAX_STEPS && !isPaused) {
                 stepCount++
                 updateExecution { copy(currentStep = stepCount) }
-                
-                Log.d(TAG, "Executing step $stepCount")
-                
+
+                DebugLogger.d(TAG, "----- 步骤 $stepCount -----")
+
                 // 截图
+                DebugLogger.d(TAG, "执行截图...")
                 val screenshotPath = captureScreenshot()
                 if (screenshotPath == null) {
-                    Log.e(TAG, "Failed to capture screenshot")
-                    updateExecution { copy(status = TaskStatus.FAILED, errorMessage = "截图失败") }
+                    DebugLogger.e(TAG, "截图失败", null)
+                    DebugLogger.e(TAG, "可能原因: Shizuku 服务未运行或权限不足")
+                    updateExecution {
+                        copy(
+                            status = TaskStatus.FAILED,
+                            errorMessage = "截图失败",
+                            debugInfo = buildString {
+                                """
+                                截图操作失败，请检查：
+                                1. Shizuku 服务是否正在运行
+                                2. ZiZip 是否已获得 Shizuku 授权
+                                3. 运行: adb shell pm list packages | grep shizuku
+                                """.trimIndent()
+                            }
+                        )
+                    }
                     break
                 }
-                
+                DebugLogger.i(TAG, "✓ 截图成功: $screenshotPath")
+
                 // 调用 AI
+                DebugLogger.d(TAG, "发送请求到 AI API...")
                 val stepResult = try {
                     val response = apiClient.sendStep(
                         taskDescription = taskDescription,
@@ -158,34 +200,44 @@ class PhoneAgent(
                     )
                     parseAIResponse(response)
                 } catch (e: Exception) {
-                    Log.e(TAG, "AI request failed", e)
+                    DebugLogger.e(TAG, "AI API 请求失败: ${e.message}", e)
                     StepResult(
                         success = false,
                         action = null,
+                        thinking = "",
                         message = "AI 请求失败: ${e.message}",
                         shouldContinue = false
                     )
                 }
-                
+
                 if (!stepResult.success) {
-                    updateExecution { 
+                    DebugLogger.e(TAG, "AI 返回错误: ${stepResult.message}", null)
+                    updateExecution {
                         copy(
-                            status = TaskStatus.FAILED, 
-                            errorMessage = stepResult.message
-                        ) 
+                            status = TaskStatus.FAILED,
+                            errorMessage = stepResult.message,
+                            debugInfo = "AI 思考过程: ${stepResult.thinking}"
+                        )
                     }
                     break
                 }
-                
+
+                // 记录 AI 思考过程
+                if (stepResult.thinking.isNotEmpty()) {
+                    DebugLogger.d(TAG, "AI 思考: ${stepResult.thinking.take(100)}...")
+                }
+
                 // 执行动作
                 val action = stepResult.action
                 if (action != null) {
+                    DebugLogger.d(TAG, "执行动作: $action")
                     val actionSuccess = executeAction(action)
                     if (!actionSuccess && action !is AgentAction.Finish) {
-                        Log.e(TAG, "Action failed: $action")
-                        // 动作失败不一定要停止，继续尝试
+                        DebugLogger.w(TAG, "动作执行失败，继续尝试")
+                    } else if (actionSuccess) {
+                        DebugLogger.i(TAG, "✓ 动作执行成功")
                     }
-                    
+
                     // 记录步骤
                     val step = StepRecord(
                         stepNumber = stepCount,
@@ -195,9 +247,9 @@ class PhoneAgent(
                     )
                     updateExecution { copy(steps = steps + step) }
                 }
-                
+
                 shouldContinue = stepResult.shouldContinue
-                
+
                 // 等待一段时间让界面响应
                 delay(STEP_DELAY_MS)
             }
@@ -221,30 +273,39 @@ class PhoneAgent(
             }
             
         } catch (e: CancellationException) {
-            Log.d(TAG, "Task cancelled")
-            updateExecution { 
+            DebugLogger.i(TAG, "任务已取消")
+            updateExecution {
                 copy(
                     status = TaskStatus.CANCELLED,
-                    endTime = System.currentTimeMillis()
-                ) 
+                    endTime = System.currentTimeMillis(),
+                    debugInfo = "用户取消任务"
+                )
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Task failed with exception", e)
-            updateExecution { 
+            DebugLogger.e(TAG, "任务异常: ${e.message}", e)
+            updateExecution {
                 copy(
                     status = TaskStatus.FAILED,
                     endTime = System.currentTimeMillis(),
-                    errorMessage = e.message
+                    errorMessage = e.message,
+                    debugInfo = buildString {
+                        appendLine("异常类型: ${e.javaClass.simpleName}")
+                        appendLine("异常消息: ${e.message}")
+                        appendLine("堆栈跟踪:")
+                        appendLine(android.util.Log.getStackTraceString(e).take(1000))
+                    }
                 )
             }
         } finally {
+            DebugLogger.i(TAG, "========== 任务结束 ==========")
             // 任务结束，隐藏虚拟屏幕边框
             setVirtualBorderVisible(false)
             // 关闭 Shower 连接
             try {
                 showerController.shutdown()
+                DebugLogger.d(TAG, "Shower 连接已关闭")
             } catch (e: Exception) {
-                Log.w(TAG, "Error shutting down Shower", e)
+                DebugLogger.w(TAG, "关闭 Shower 连接失败", e)
             }
         }
 
@@ -262,8 +323,9 @@ class PhoneAgent(
                 setPackage(context.packageName)
             }
             context.sendBroadcast(intent)
+            DebugLogger.d(TAG, "虚拟边框: ${if (visible) "显示" else "隐藏"}")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to set virtual border visibility", e)
+            DebugLogger.w(TAG, "设置虚拟边框失败", e)
         }
     }
     
@@ -306,23 +368,28 @@ class PhoneAgent(
         // 优先使用 Shower 截图（如果可用）
         if (isShowerAvailable) {
             try {
+                DebugLogger.d(TAG, "使用 Shower 截图...")
                 val showerBytes = showerController.requestScreenshot(timeoutMs = 3000L)
                 if (showerBytes != null) {
                     File(path).writeBytes(showerBytes)
-                    Log.d(TAG, "Screenshot captured via Shower: $path")
+                    DebugLogger.i(TAG, "✓ Shower 截图成功: $path")
                     return path
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Shower screenshot failed, falling back to screencap", e)
+                DebugLogger.w(TAG, "Shower 截图失败，降级到 screencap", e)
             }
         }
 
         // 降级到 screencap 命令
+        DebugLogger.d(TAG, "使用 screencap 命令截图...")
         val success = AndroidShellExecutor.screenshot(path)
         return if (success) {
-            Log.d(TAG, "Screenshot captured via screencap: $path")
+            DebugLogger.i(TAG, "✓ screencap 截图成功: $path")
             path
-        } else null
+        } else {
+            DebugLogger.e(TAG, "截图失败", null)
+            null
+        }
     }
     
     /**
@@ -355,7 +422,7 @@ class PhoneAgent(
 
         // 空动作检查
         if (trimmed.isEmpty()) {
-            Log.w(TAG, "Empty action string")
+            DebugLogger.w(TAG, "空动作字符串")
             return AgentAction.Finish("完成（无动作）")
         }
 
@@ -364,19 +431,21 @@ class PhoneAgent(
         val match = regex.find(trimmed)
 
         if (match == null) {
-            Log.w(TAG, "Failed to parse action: '$actionStr' (format mismatch)")
+            DebugLogger.e(TAG, "动作解析失败: '$actionStr' (格式不匹配)", null)
             return null
         }
 
         val actionName = match.groupValues[1].lowercase()
         val params = match.groupValues[2]
 
+        DebugLogger.d(TAG, "解析动作: $actionName($params)")
+
         return when (actionName) {
             "launch" -> AgentAction.Launch(params.trim().removeSurrounding("\""))
             "tap" -> {
                 val coords = params.split(",").map { it.trim().toIntOrNull() ?: 0 }
                 if (coords.size >= 2) AgentAction.Tap(coords[0], coords[1]) else {
-                    Log.w(TAG, "Invalid tap coordinates: $params")
+                    DebugLogger.e(TAG, "无效的点击坐标: $params", null)
                     null
                 }
             }
@@ -386,7 +455,7 @@ class PhoneAgent(
                 if (coords.size >= 4) {
                     AgentAction.Swipe(coords[0], coords[1], coords[2], coords[3], coords.getOrNull(4) ?: 300)
                 } else {
-                    Log.w(TAG, "Invalid swipe coordinates: $params (need x1,y1,x2,y2)")
+                    DebugLogger.e(TAG, "无效的滑动坐标: $params (需要 x1,y1,x2,y2)", null)
                     null
                 }
             }
@@ -399,7 +468,7 @@ class PhoneAgent(
             "take_over", "takeover" -> AgentAction.TakeOver
             "finish", "done" -> AgentAction.Finish(params.trim().removeSurrounding("\""))
             else -> {
-                Log.w(TAG, "Unknown action type: '$actionName'")
+                DebugLogger.e(TAG, "未知动作类型: '$actionName'", null)
                 null
             }
         }
@@ -409,7 +478,7 @@ class PhoneAgent(
      * 执行动作
      */
     private suspend fun executeAction(action: AgentAction): Boolean {
-        Log.d(TAG, "Executing action: $action")
+        DebugLogger.d(TAG, "执行动作: $action")
 
         return when (action) {
             is AgentAction.Launch -> {

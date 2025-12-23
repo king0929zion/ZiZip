@@ -118,7 +118,20 @@ fun SettingsScreen(
             }
             
             Spacer(modifier = Modifier.height(24.dp))
-            
+
+            // 调试
+            SectionHeader(title = "调试")
+            SettingsCard {
+                NavigationTile(
+                    icon = Icons.Outlined.BugReport,
+                    title = "调试日志",
+                    description = "查看应用运行日志",
+                    onClick = { navController.navigate(Screen.DebugLog.route) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // 关于
             SectionHeader(title = "关于")
             SettingsCard {

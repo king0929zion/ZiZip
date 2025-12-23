@@ -11,4 +11,5 @@ sealed class Screen(val route: String) {
     object ProviderConfig : Screen("provider_config")
     object AutoGLMConfig : Screen("autoglm_config")
     object VirtualDisplay : Screen("virtual_display")
+    object DebugLog : Screen("debug_log")
 }

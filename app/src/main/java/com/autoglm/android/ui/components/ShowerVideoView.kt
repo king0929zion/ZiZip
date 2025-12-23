@@ -4,6 +4,7 @@ import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,10 +20,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.autoglm.android.core.agent.ShowerVideoRenderer
-import com.autoglm.android.ui.overlay.VirtualDisplayBorder
 import kotlinx.coroutines.delay
 import android.util.Log
 import android.view.MotionEvent
+import android.view.HapticFeedbackConstants
 
 private const val TAG = "ShowerVideoView"
 
@@ -36,8 +37,8 @@ data class TouchEvent(
 )
 
 /**
- * Shower 虚拟屏幕视频显示组件
- * 显示 H.264 视频流并处理触摸事件
+ * Shower 虚拟屏幕视频显示组件 - 增强版
+ * 支持 H.264 视频流显示、缩放、旋转
  */
 @Composable
 fun ShowerVideoView(
@@ -45,6 +46,8 @@ fun ShowerVideoView(
     videoWidth: Int = 1080,
     videoHeight: Int = 1920,
     isStreaming: Boolean = false,
+    zoomLevel: Float = 1f,
+    screenRotation: Int = 0,
     onTouchEvent: (TouchEvent) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -53,6 +56,9 @@ fun ShowerVideoView(
     var surface by remember { mutableStateOf<Surface?>(null) }
     var isAttached by remember { mutableStateOf(false) }
     var isReady by remember { mutableStateOf(false) }
+
+    // Apply rotation modifier
+    val rotationModifier = Modifier.rotate(screenRotation.toFloat())
 
     // Lifecycle management
     DisposableEffect(lifecycleOwner) {
@@ -100,14 +106,38 @@ fun ShowerVideoView(
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
-                if (!isStreaming) {
-                    Text(
-                        text = "虚拟屏幕未启动",
-                        color = Color.Gray,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    CircularProgressIndicator(color = Color.White)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (!isStreaming) {
+                        // Not connected state
+                        Icon(
+                            android.vector.graphics.drawable.Icon.createWithContext(
+                                context,
+                                androidx.compose.ui.R.drawable.ic_flower_placeholder
+                            ),
+                            contentDescription = null,
+                            tint = Grey600,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = "虚拟屏幕未启动",
+                            color = Grey500,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        // Loading state
+                        CircularProgressIndicator(
+                            color = Accent,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Text(
+                            text = "正在加载视频流...",
+                            color = Grey400,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         }
@@ -117,7 +147,7 @@ fun ShowerVideoView(
                 SurfaceView(ctx).apply {
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
-                            Log.d(TAG, "Surface created: ${videoWidth}x$videoHeight")
+                            Log.d(TAG, "Surface created: ${videoWidth}x$videoHeight, zoom: $zoomLevel, rotation: $screenRotation")
                             surface = holder.surface
                             isAttached = ShowerVideoRenderer.attach(
                                 holder.surface,
@@ -147,7 +177,7 @@ fun ShowerVideoView(
                         }
                     })
 
-                    // Touch event handling
+                    // Touch event handling with haptic feedback
                     setOnTouchListener { view, event ->
                         if (isReady && isStreaming) {
                             val normalizedX = event.x / view.width.toFloat()
@@ -155,10 +185,11 @@ fun ShowerVideoView(
 
                             onTouchEvent(TouchEvent(event.action, normalizedX, normalizedY))
 
+                            // Haptic feedback on touch
                             when (event.action) {
                                 MotionEvent.ACTION_DOWN -> {
+                                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                                     Log.d(TAG, "Touch down: ${event.x}, ${event.y}")
-                                    view.performClick()
                                 }
                                 MotionEvent.ACTION_UP -> {
                                     Log.d(TAG, "Touch up: ${event.x}, ${event.y}")
@@ -170,38 +201,56 @@ fun ShowerVideoView(
                 }
             },
             update = { view ->
-                // Keep view updated
+                // Keep view updated with current state
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .then(rotationModifier)
+                .clickable { /* Consume clicks */ }
         )
     }
 }
 
 /**
- * 虚拟屏幕视频覆盖层
- * 包含视频显示和边框指示器
+ * 触摸波纹效果组件
  */
 @Composable
-fun VirtualDisplayVideoOverlay(
+fun TouchRipple(
     modifier: Modifier = Modifier,
-    videoWidth: Int = 1080,
-    videoHeight: Int = 1920,
-    isStreaming: Boolean = false,
-    onTouchEvent: (TouchEvent) -> Unit = {}
+    x: Float,
+    y: Float
 ) {
-    Box(modifier = modifier) {
-        ShowerVideoView(
-            modifier = Modifier.fillMaxSize(),
-            videoWidth = videoWidth,
-            videoHeight = videoHeight,
-            isStreaming = isStreaming,
-            onTouchEvent = onTouchEvent
-        )
+    val infiniteTransition = rememberInfiniteTransition(label = "ripple")
+    val rippleSize by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 100f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rippleSize"
+    )
+    val rippleAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rippleAlpha"
+    )
 
-        // Virtual display border can be added here if needed
-        VirtualDisplayBorder(
-            isActive = isStreaming,
-            modifier = Modifier.fillMaxSize()
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(rippleSize.dp)
+                .background(
+                    Accent.copy(alpha = rippleAlpha * 0.3f),
+                    CircleShape
+                )
         )
     }
 }

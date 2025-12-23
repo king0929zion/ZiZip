@@ -114,12 +114,20 @@ object ShowerServerManager {
 
         // 复制 APK 到 /data/local/tmp
         val remoteJarPath = "/data/local/tmp/${getLocalFileName()}"
+        val packageName = context.packageName
+        val appFilePath = "/data/data/$packageName/files/${getLocalFileName()}"
         DebugLogger.d(TAG, "复制 APK 到 $remoteJarPath...")
-        val copyCmd = "cp ${jarFile.absolutePath} $remoteJarPath"
+
+        // 使用 run-as 访问应用私有目录（仅 debug 版本可用）
+        // 如果失败，降级到普通 cat 命令
+        val copyCmd = "run-as $packageName cat $appFilePath > $remoteJarPath 2>/dev/null || cat $appFilePath > $remoteJarPath"
         val copyResult = AndroidShellExecutor.executeCommand(copyCmd)
         if (!copyResult.success) {
             DebugLogger.e(TAG, "✗ 复制 APK 到 /data/local/tmp 失败: ${copyResult.error}", null)
-            DebugLogger.e(TAG, "可能原因: 存储权限不足或 SELinux 限制", null)
+            DebugLogger.e(TAG, "可能原因: SELinux 限制或 run-as 不可用", null)
+            DebugLogger.e(TAG, "解决方法:", null)
+            DebugLogger.e(TAG, "  1. 确保使用 Debug 版本安装", null)
+            DebugLogger.e(TAG, "  2. 手动执行: adb push $appFilePath $remoteJarPath", null)
             return false
         }
         DebugLogger.i(TAG, "✓ APK 已复制到 /data/local/tmp")
@@ -171,11 +179,10 @@ object ShowerServerManager {
      * 复制 APK 到外部目录
      */
     private suspend fun copyJarToExternalDir(context: Context): File = withContext(Dispatchers.IO) {
-        val baseDir = File("/sdcard/Download/ZiZip")
-        if (!baseDir.exists()) {
-            baseDir.mkdirs()
-        }
-        val outFile = File(baseDir, getLocalFileName())
+        // 使用应用私有目录（/data/data/<package>/files/）
+        // 因为 Shizuku shell 可以通过 run-as 访问
+        val appFileDir = context.filesDir
+        val outFile = File(appFileDir, getLocalFileName())
 
         // 优先使用 APK，降级使用 JAR
         val assetName = getAssetFileName()

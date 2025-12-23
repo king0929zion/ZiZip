@@ -504,27 +504,8 @@ class PhoneAgent(
                 }
             }
             is AgentAction.Type -> {
-                // 多重降级策略：直接输入法 → 广播输入法 → shell input
-                val imeSuccess = com.autoglm.android.service.ime.ZiZipInputMethod.inputTextDirect(action.text)
-                if (!imeSuccess) {
-                    // 尝试切换到 ZiZip 输入法后再输入
-                    val switched = com.autoglm.android.service.ime.ZiZipInputMethod.switchToThisInputMethod(context)
-                    if (switched) {
-                        delay(200) // 等待输入法切换
-                        val directSuccess = com.autoglm.android.service.ime.ZiZipInputMethod.inputTextDirect(action.text)
-                        if (directSuccess) {
-                            true
-                        } else {
-                            // 最后尝试广播方式
-                            com.autoglm.android.service.ime.ZiZipInputMethod.inputTextViaBase64Broadcast(context, action.text)
-                        }
-                    } else {
-                        // 降级到 shell input（不支持中文）
-                        AndroidShellExecutor.inputText(action.text)
-                    }
-                } else {
-                    true
-                }
+                // 使用 ImeManager 自动管理输入法切换
+                com.autoglm.android.core.ime.ImeManager.inputText(context, action.text)
             }
             is AgentAction.Swipe -> {
                 // 坐标归一化：检测并转换 0-1000 坐标

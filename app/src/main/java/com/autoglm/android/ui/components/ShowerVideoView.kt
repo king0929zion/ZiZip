@@ -1,6 +1,5 @@
 package com.autoglm.android.ui.components
 
-import android.content.Context
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -24,7 +23,6 @@ import com.autoglm.android.ui.overlay.VirtualDisplayBorder
 import kotlinx.coroutines.delay
 import android.util.Log
 import android.view.MotionEvent
-import com.autoglm.android.core.agent.ShowerController
 
 private const val TAG = "ShowerVideoView"
 
@@ -219,6 +217,6 @@ fun onVideoFrameReceived(data: ByteArray) {
 /**
  * 截取当前虚拟屏幕画面
  */
-suspend fun captureVirtualDisplayScreenshot(context: Context): ByteArray? {
+suspend fun captureVirtualDisplayScreenshot(): ByteArray? {
     return ShowerVideoRenderer.captureCurrentFramePng()
 }

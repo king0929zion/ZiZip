@@ -1,10 +1,6 @@
 package com.autoglm.android.core.agent
 
-import android.graphics.ImageFormat
-import android.graphics.PixelFormat
-import android.graphics.Rect
 import android.media.MediaCodec
-import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.os.Build
 import android.util.Log

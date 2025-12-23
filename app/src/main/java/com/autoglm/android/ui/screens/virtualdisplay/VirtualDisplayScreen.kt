@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.autoglm.android.ui.components.ShowerVideoView
+import com.autoglm.android.ui.components.TouchEvent
 import com.autoglm.android.ui.overlay.VirtualDisplayBorder
 import com.autoglm.android.ui.theme.*
 import kotlinx.coroutines.launch
@@ -84,7 +85,7 @@ fun VirtualDisplayScreen(
                     IconButton(
                         onClick = {
                             scope.launch {
-                                viewModel.captureScreenshot(context)?.let { bytes ->
+                                viewModel.captureScreenshot()?.let { bytes ->
                                     // TODO: Save or share screenshot
                                     Log.d(TAG, "Screenshot captured: ${bytes.size} bytes")
                                 }
@@ -120,7 +121,7 @@ fun VirtualDisplayScreen(
                     val y = (event.y * screenHeight).toInt()
 
                     scope.launch {
-                        viewModel.handleTouchEvent(context, event.action, x, y)
+                        viewModel.handleTouchEvent(event.action, x, y)
                     }
                 }
             )
@@ -216,7 +217,7 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
         _isStreaming.value = false
     }
 
-    suspend fun handleTouchEvent(context: Context, action: Int, x: Int, y: Int) {
+    suspend fun handleTouchEvent(action: Int, x: Int, y: Int) {
         val controller = showerController ?: return
 
         try {
@@ -236,7 +237,7 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
         }
     }
 
-    suspend fun captureScreenshot(context: Context): ByteArray? {
+    suspend fun captureScreenshot(): ByteArray? {
         return showerController?.requestScreenshot(timeoutMs = 3000L)
     }
 }

@@ -154,7 +154,7 @@ object DebugLogger {
      */
     fun exportLogs(context: Context): String {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val exportPath = "${context.getExternalFilesDir}/logs/zizip_debug_$timestamp.txt"
+        val exportPath = File(context.getExternalFilesDir(null), "logs/zizip_debug_$timestamp.txt").absolutePath
 
         try {
             File(exportPath).parentFile?.mkdirs()

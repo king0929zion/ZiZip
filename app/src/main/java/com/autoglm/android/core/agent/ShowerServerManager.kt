@@ -2,6 +2,7 @@ package com.autoglm.android.core.agent
 
 import android.content.Context
 import android.util.Log
+import com.autoglm.android.core.debug.DebugLogger
 import com.autoglm.android.core.shizuku.AndroidShellExecutor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -28,14 +29,24 @@ object ShowerServerManager {
      */
     fun isJarAvailable(context: Context): Boolean {
         // 优先检查 APK（推荐方式）
-        if (checkAssetExists(context, ASSET_APK_NAME)) return true
+        if (checkAssetExists(context, ASSET_APK_NAME)) {
+            DebugLogger.d(TAG, "APK exists in assets: $ASSET_APK_NAME")
+            return true
+        }
         // 降级检查 JAR（兼容方式）
-        return checkAssetExists(context, ASSET_JAR_NAME)
+        if (checkAssetExists(context, ASSET_JAR_NAME)) {
+            DebugLogger.d(TAG, "JAR exists in assets: $ASSET_JAR_NAME")
+            return true
+        }
+        DebugLogger.e(TAG, "No shower-server file found in assets", null)
+        return false
     }
 
     private fun checkAssetExists(context: Context, assetName: String): Boolean {
         return try {
-            context.assets.open(assetName).use { it.available() > 0 }
+            val size = context.assets.open(assetName).use { it.available() }
+            DebugLogger.d(TAG, "Asset $assetName size: $size bytes")
+            size > 0
         } catch (e: Exception) {
             false
         }
@@ -59,71 +70,89 @@ object ShowerServerManager {
      * 确保服务器已启动
      */
     suspend fun ensureServerStarted(context: Context): Boolean {
+        DebugLogger.i(TAG, "========== Shower 服务器启动流程 ==========")
+
         // 检查服务器是否已在监听
         if (isServerListening()) {
-            Log.d(TAG, "Shower server already listening on 127.0.0.1:$SERVER_PORT")
+            DebugLogger.i(TAG, "✓ Shower 服务器已在运行 (127.0.0.1:$SERVER_PORT)")
             return true
         }
 
         // 检查服务器文件是否存在
+        DebugLogger.d(TAG, "检查 shower-server.apk 资源...")
         if (!isJarAvailable(context)) {
-            Log.e(TAG, "shower-server.apk not found in assets.")
-            Log.e(TAG, "To build: cd tools && ./gradlew assembleDebug")
-            Log.e(TAG, "Then copy: cp tools/app/build/outputs/apk/debug/app-debug.apk app/src/main/assets/shower-server.apk")
+            DebugLogger.e(TAG, "✗ shower-server.apk 不存在于 assets 目录", null)
+            DebugLogger.e(TAG, "解决方法:", null)
+            DebugLogger.e(TAG, "  1. 等待 GitHub Actions 自动构建", null)
+            DebugLogger.e(TAG, "  2. 或手动构建: cd tools && ./gradlew assembleDebug", null)
+            DebugLogger.e(TAG, "  3. 复制 APK: cp tools/app/build/outputs/apk/debug/app-debug.apk app/src/main/assets/shower-server.apk", null)
             return false
         }
+        DebugLogger.i(TAG, "✓ 资源文件存在")
 
         val appContext = context.applicationContext
         val jarFile = try {
+            DebugLogger.d(TAG, "复制 APK 到外部目录...")
             copyJarToExternalDir(appContext)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy shower-server.apk", e)
+            DebugLogger.e(TAG, "✗ 复制 APK 失败: ${e.message}", e)
             return false
         }
 
         // 检查文件是否存在且有内容
         if (!jarFile.exists() || jarFile.length() == 0L) {
-            Log.e(TAG, "APK file is empty or doesn't exist: ${jarFile.absolutePath}")
+            DebugLogger.e(TAG, "✗ APK 文件为空或不存在: ${jarFile.absolutePath}", null)
             return false
         }
+        DebugLogger.i(TAG, "✓ APK 已复制 (${jarFile.length()} bytes)")
 
         // 停止现有服务器
+        DebugLogger.d(TAG, "停止现有 Shower 服务器进程...")
         val killCmd = "pkill -f com.ai.assistance.shower.Main >/dev/null 2>&1 || true"
-        Log.d(TAG, "Stopping existing server: $killCmd")
         AndroidShellExecutor.executeCommand(killCmd)
+        delay(500) // 等待进程完全终止
 
         // 复制 APK 到 /data/local/tmp
         val remoteJarPath = "/data/local/tmp/${getLocalFileName()}"
+        DebugLogger.d(TAG, "复制 APK 到 $remoteJarPath...")
         val copyCmd = "cp ${jarFile.absolutePath} $remoteJarPath"
-        Log.d(TAG, "Copying apk: $copyCmd")
         val copyResult = AndroidShellExecutor.executeCommand(copyCmd)
         if (!copyResult.success) {
-            Log.e(TAG, "Failed to copy apk: ${copyResult.error}")
+            DebugLogger.e(TAG, "✗ 复制 APK 到 /data/local/tmp 失败: ${copyResult.error}", null)
+            DebugLogger.e(TAG, "可能原因: 存储权限不足或 SELinux 限制", null)
             return false
         }
+        DebugLogger.i(TAG, "✓ APK 已复制到 /data/local/tmp")
 
         // 给予执行权限
-        val chmodCmd = "chmod +x $remoteJarPath"
+        DebugLogger.d(TAG, "设置执行权限...")
+        val chmodCmd = "chmod 644 $remoteJarPath" // APK 不需要执行权限
         AndroidShellExecutor.executeCommand(chmodCmd)
 
         // 启动服务器（后台运行）
-        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main >/dev/null 2>&1 &"
-        Log.d(TAG, "Starting server: $startCmd")
+        DebugLogger.d(TAG, "启动 Shower 服务器...")
+        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main >/data/local/tmp/shower.log 2>&1 &"
+        DebugLogger.d(TAG, "启动命令: $startCmd")
         val startResult = AndroidShellExecutor.executeCommand(startCmd)
         if (!startResult.success) {
-            Log.w(TAG, "Start command returned error, but server may still be starting: ${startResult.error}")
+            DebugLogger.w(TAG, "启动命令返回错误，但服务器可能仍在启动中", null)
         }
 
         // 等待服务器启动（最多 10 秒）
+        DebugLogger.d(TAG, "等待服务器启动...")
         for (attempt in 0 until 50) {
             delay(200)
             if (isServerListening()) {
-                Log.d(TAG, "Server started after ${(attempt + 1) * 200}ms")
+                DebugLogger.i(TAG, "✓ Shower 服务器启动成功 (${(attempt + 1) * 200}ms)")
                 return true
             }
         }
 
-        Log.e(TAG, "Server did not start within expected time")
+        DebugLogger.e(TAG, "✗ Shower 服务器启动超时", null)
+        DebugLogger.e(TAG, "调试信息:", null)
+        DebugLogger.e(TAG, "  1. 检查日志: adb shell cat /data/local/tmp/shower.log", null)
+        DebugLogger.e(TAG, "  2. 检查进程: adb shell ps | grep shower", null)
+        DebugLogger.e(TAG, "  3. 检查端口: adb shell netstat -an | grep 8986", null)
         return false
     }
 
@@ -131,8 +160,10 @@ object ShowerServerManager {
      * 停止服务器
      */
     suspend fun stopServer(): Boolean {
+        DebugLogger.d(TAG, "停止 Shower 服务器...")
         val cmd = "pkill -f com.ai.assistance.shower.Main >/dev/null 2>&1 || true"
         val result = AndroidShellExecutor.executeCommand(cmd)
+        DebugLogger.i(TAG, if (result.success) "✓ 服务器已停止" else "停止命令执行完成")
         return result.success
     }
 
@@ -154,17 +185,17 @@ object ShowerServerManager {
                     input.copyTo(output)
                 }
             }
-            Log.d(TAG, "Copied $assetName to ${outFile.absolutePath} (${outFile.length()} bytes)")
+            DebugLogger.d(TAG, "已复制 $assetName 到 ${outFile.absolutePath} (${outFile.length()} bytes)")
         } catch (e: Exception) {
             // 如果 APK 不存在，尝试 JAR
             if (assetName == ASSET_APK_NAME) {
-                Log.w(TAG, "APK not found, trying JAR fallback")
+                DebugLogger.w(TAG, "APK 不存在，尝试 JAR 降级", null)
                 context.assets.open(ASSET_JAR_NAME).use { input ->
                     FileOutputStream(outFile).use { output ->
                         input.copyTo(output)
                     }
                 }
-                Log.d(TAG, "Copied $ASSET_JAR_NAME to ${outFile.absolutePath} (${outFile.length()} bytes)")
+                DebugLogger.d(TAG, "已复制 $ASSET_JAR_NAME 到 ${outFile.absolutePath} (${outFile.length()} bytes)")
             } else {
                 throw e
             }

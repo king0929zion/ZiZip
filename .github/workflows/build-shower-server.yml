@@ -36,9 +36,16 @@ jobs:
         run: |
           mkdir -p app/src/main/assets
           cp tools/app/build/outputs/apk/debug/app-debug.apk app/src/main/assets/shower-server.apk
+          ls -la app/src/main/assets/
 
-      - name: Show APK info
-        run: ls -la app/src/main/assets/shower-server.apk
+      - name: Verify APK size
+        run: |
+          SIZE=$(stat -f%z app/src/main/assets/shower-server.apk 2>/dev/null || stat -c%s app/src/main/assets/shower-server.apk 2>/dev/null)
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "Error: APK is too small ($SIZE bytes)"
+            exit 1
+          fi
+          echo "APK size: $SIZE bytes"
 
       - name: Commit APK
         run: |

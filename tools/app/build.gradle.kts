@@ -6,9 +6,7 @@ plugins {
 
 android {
     namespace = "com.ai.assistance.shower"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.ai.assistance.shower"

@@ -90,24 +90,24 @@ jobs:
 
       - name: Build Shower Server APK
         working-directory: tools
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleDebug
 
       - name: Find and Rename APK
         run: |
-          APK=$(find tools/app/build/outputs/apk/release -name "*.apk" | head -1)
+          APK=$(find tools/app/build/outputs/apk/debug -name "*.apk" | head -1)
           if [ -z "$APK" ]; then
             echo "Error: APK not found!"
-            ls -la tools/app/build/outputs/apk/release/ || true
+            ls -la tools/app/build/outputs/apk/debug/ || true
             exit 1
           fi
           echo "Found APK: $APK"
-          mv "$APK" "tools/app/build/outputs/apk/release/ShowerServer.apk"
+          mv "$APK" "tools/app/build/outputs/apk/debug/ShowerServer.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ShowerServer-APK
-          path: tools/app/build/outputs/apk/release/ShowerServer.apk
+          path: tools/app/build/outputs/apk/debug/ShowerServer.apk
           retention-days: 30
 
   release:

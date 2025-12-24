@@ -385,8 +385,10 @@ class PhoneAgent(
                     }
                 }
 
-                if (showerBytes != null) {
-                    File(path).writeBytes(showerBytes)
+                // 使用局部变量避免 smart cast 问题
+                val bytes = showerBytes
+                if (bytes != null) {
+                    File(path).writeBytes(bytes)
                     DebugLogger.i(TAG, "✓ Shower 截图成功: $path")
                     return path
                 }

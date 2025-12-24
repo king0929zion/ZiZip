@@ -368,7 +368,23 @@ class PhoneAgent(
         if (isShowerAvailable) {
             try {
                 DebugLogger.d(TAG, "使用 Shower 截图...")
-                val showerBytes = ShowerController.requestScreenshot(timeoutMs = 3000L)
+                // 尝试 2 次 Shower 截图（防止暂时性失败）
+                var showerBytes: ByteArray? = null
+                repeat(2) { attempt ->
+                    if (showerBytes == null) {
+                        try {
+                            showerBytes = ShowerController.requestScreenshot(timeoutMs = 3000L)
+                            if (showerBytes != null) {
+                                DebugLogger.i(TAG, "Shower 截图成功 (尝试 ${attempt + 1})")
+                                return@repeat
+                            }
+                        } catch (e: Exception) {
+                            DebugLogger.w(TAG, "Shower 截图失败 (尝试 ${attempt + 1}): ${e.message}")
+                            if (attempt < 1) delay(500)
+                        }
+                    }
+                }
+
                 if (showerBytes != null) {
                     File(path).writeBytes(showerBytes)
                     DebugLogger.i(TAG, "✓ Shower 截图成功: $path")

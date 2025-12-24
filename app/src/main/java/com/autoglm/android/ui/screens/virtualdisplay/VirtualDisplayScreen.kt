@@ -434,14 +434,14 @@ class VirtualDisplayViewModel : androidx.lifecycle.ViewModel() {
 
             if (connected) {
                 // Get video size from existing connection
-                val (width, height) = com.autoglm.android.core.agent.ShowerController.getVideoSize()
-                if (width > 0 && height > 0) {
+                val size = com.autoglm.android.core.agent.ShowerController.getVideoSize()
+                if (size != null) {
+                    val (width, height) = size
                     _videoWidth.value = width
                     _videoHeight.value = height
+                    // Video streaming status
+                    _isStreaming.value = true
                 }
-
-                // Video streaming status
-                _isStreaming.value = true
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to check virtual display status", e)

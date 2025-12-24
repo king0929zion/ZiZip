@@ -61,7 +61,13 @@ object ShowerController {
     }
 
     fun getDisplayId(): Int? = virtualDisplayId
-    fun getVideoSize(): Pair<Int, Int> = Pair(videoWidth, videoHeight)
+    fun getVideoSize(): Pair<Int, Int>? {
+        return if (videoWidth > 0 && videoHeight > 0) {
+            Pair(videoWidth, videoHeight)
+        } else {
+            null
+        }
+    }
     fun isConnected(): Boolean = connected
 
     private val listener = object : WebSocketListener() {
@@ -178,6 +184,77 @@ object ShowerController {
             connectingDeferred = null
             false
         }
+    }
+
+    /**
+     * 确保 WebSocket 已连接（带重试机制）
+     * @param maxRetries 最大重试次数，默认 3 次
+     * @param retryDelayMs 重试延迟（毫秒），默认 1000ms
+     */
+    suspend fun ensureConnectedWithRetry(
+        maxRetries: Int = 3,
+        retryDelayMs: Long = 1000L
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (connected && webSocket != null) {
+            return@withContext true
+        }
+
+        // 检查是否已有正在进行的连接
+        val existing = connectingDeferred
+        if (existing != null) {
+            return@withContext try {
+                withTimeout(5000L) {
+                    existing.await()
+                }
+            } catch (e: Exception) {
+                DebugLogger.e(TAG, "等待现有 WebSocket 连接失败", e)
+                false
+            }
+        }
+
+        // 尝试连接，带重试
+        repeat(maxRetries) { attempt ->
+            if (connected && webSocket != null) {
+                return@withContext true
+            }
+
+            val deferred = CompletableDeferred<Boolean>()
+            connectingDeferred = deferred
+
+            try {
+                val request = Request.Builder()
+                    .url(buildUrl())
+                    .build()
+
+                webSocket = client.newWebSocket(request, listener)
+
+                val result = withTimeout(5000L) {
+                    deferred.await()
+                }
+
+                if (result) {
+                    DebugLogger.i(TAG, "WebSocket 连接成功 (尝试 ${attempt + 1}/$maxRetries)")
+                    return@withContext true
+                }
+            } catch (e: Exception) {
+                DebugLogger.w(TAG, "连接失败 (尝试 ${attempt + 1}/$maxRetries): ${e.message}")
+
+                // 清理失败的连接
+                try {
+                    webSocket?.cancel()
+                } catch (_: Exception) {}
+                webSocket = null
+                connectingDeferred = null
+
+                // 如果不是最后一次尝试，等待后重试
+                if (attempt < maxRetries - 1) {
+                    delay(retryDelayMs)
+                }
+            }
+        }
+
+        DebugLogger.e(TAG, "WebSocket 连接失败，已达到最大重试次数 ($maxRetries)", null)
+        false
     }
 
     /**
@@ -329,7 +406,7 @@ object ShowerController {
 
     /**
      * 关闭连接
-     * 确保正确关闭 WebSocket 并清理资源
+     * 确保正确关闭 WebSocket 并清理所有资源
      */
     fun shutdown() {
         DebugLogger.d(TAG, "关闭连接")
@@ -354,6 +431,9 @@ object ShowerController {
             // 清理 deferred 防止下次连接时使用旧的
             connectingDeferred?.complete(false)
             connectingDeferred = null
+            // 清理待处理的截图请求
+            pendingScreenshot?.complete(null)
+            pendingScreenshot = null
         }
     }
 }

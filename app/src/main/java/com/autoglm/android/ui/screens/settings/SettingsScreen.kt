@@ -135,9 +135,9 @@ fun SettingsScreen(
                         }
                     },
                     onOpenDownload = {
-                        val downloadInfo = ShowerServerManager.getDownloadInfo()
+                        val serverInfo = ShowerServerManager.getServerInfo()
                         val intent = Intent(Intent.ACTION_VIEW).apply {
-                            data = Uri.parse(downloadInfo.downloadUrl)
+                            data = Uri.parse(serverInfo.sourceUrl)
                         }
                         context.startActivity(intent)
                     }

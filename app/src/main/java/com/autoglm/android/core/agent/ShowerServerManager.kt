@@ -9,23 +9,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
  * Shower 服务器管理器
- * 管理 Shower Server 独立应用的启动
+ * 管理 Shower Server 的启动
  *
- * 架构说明：
- * - Shower Server 是一个独立应用（包名: com.ai.assistance.shower）
- * - ZiZip 通过 WebSocket 连接到 Shower Server
- * - 用户需要分别安装两个应用
+ * 架构说明（参考 Operit 实现）：
+ * 1. 首先从 assets 复制 shower-server.apk 到设备存储
+ * 2. 如果应用未安装，自动安装 APK
+ * 3. 通过 app_process 启动 Shower Server 服务
+ * 4. 支持已安装应用的直接启动
  */
 object ShowerServerManager {
     private const val TAG = "ShowerServerManager"
     private const val SHOWER_PACKAGE = "com.ai.assistance.shower"
     private const val SERVER_PORT = 8986
     private const val SHOWER_MAIN = "com.ai.assistance.shower.ShowerServer"
+    private const val ASSET_APK_NAME = "shower-server.apk"
+    private const val LOCAL_APK_NAME = "shower-server.apk"
 
     /**
      * 检查 Shower Server 应用是否已安装
@@ -42,22 +46,59 @@ object ShowerServerManager {
     }
 
     /**
+     * 从 assets 复制 APK 到外部存储
+     * 参考 Operit 的 copyJarToExternalDir 实现
+     */
+    private suspend fun copyApkToExternalDir(context: Context): File? = withContext(Dispatchers.IO) {
+        val baseDir = File("/sdcard/Download/ZiZip")
+        if (!baseDir.exists()) {
+            baseDir.mkdirs()
+        }
+        val outFile = File(baseDir, LOCAL_APK_NAME)
+
+        try {
+            context.assets.open(ASSET_APK_NAME).use { input ->
+                FileOutputStream(outFile).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                }
+            }
+            DebugLogger.i(TAG, "✓ 已复制 APK 到: ${outFile.absolutePath}")
+            outFile
+        } catch (e: Exception) {
+            DebugLogger.e(TAG, "✗ 复制 APK 失败: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * 安装 APK 到系统
+     */
+    private suspend fun installApk(apkPath: String): Boolean = withContext(Dispatchers.IO) {
+        val cmd = "pm install -r -g \"$apkPath\""
+        DebugLogger.d(TAG, "安装命令: $cmd")
+        val result = AndroidShellExecutor.executeCommand(cmd)
+
+        if (result.success) {
+            DebugLogger.i(TAG, "✓ APK 安装成功")
+            true
+        } else {
+            DebugLogger.e(TAG, "✗ APK 安装失败: ${result.stderr}", null)
+            false
+        }
+    }
+
+    /**
      * 启动 Shower Server
-     * 通过 app_process 启动已安装的 Shower Server 应用
+     * 自动从 assets 安装 APK（如果需要）并启动服务
      */
     suspend fun startServer(context: Context): Boolean = withContext(Dispatchers.IO) {
         DebugLogger.i(TAG, "========== 启动 Shower Server ==========")
-
-        // 检查应用是否安装
-        if (!isShowerAppInstalled(context)) {
-            DebugLogger.e(TAG, "✗ Shower Server 应用未安装", null)
-            DebugLogger.e(TAG, "", null)
-            DebugLogger.e(TAG, "请先安装 Shower Server 应用:", null)
-            DebugLogger.e(TAG, "  1. 从 GitHub 下载 Shower Server APK", null)
-            DebugLogger.e(TAG, "  2. 在设备上安装 Shower Server", null)
-            DebugLogger.e(TAG, "  3. 打开 Shower Server 应用一次", null)
-            return@withContext false
-        }
 
         // 检查是否已在运行
         if (isServerListening()) {
@@ -65,13 +106,43 @@ object ShowerServerManager {
             return@withContext true
         }
 
-        // 通过 am start 启动 Shower Server 应用
-        // 使用 app_process 方式启动（备用）
-        val cmd = "CLASSPATH=/data/app/$SHOWER_PACKAGE*/base.apk app_process / com.ai.assistance.shower.ShowerServer >/data/local/tmp/shower.log 2>&1 &"
+        // 检查应用是否安装
+        var installed = isShowerAppInstalled(context)
+
+        // 如果未安装，尝试从 assets 复制并安装
+        if (!installed) {
+            DebugLogger.i(TAG, "应用未安装，正在从 assets 安装...")
+
+            val apkFile = copyApkToExternalDir(context)
+            if (apkFile != null) {
+                if (installApk(apkFile.absolutePath)) {
+                    // 等待安装完成
+                    delay(1000)
+                    installed = isShowerAppInstalled(context)
+                }
+            }
+
+            if (!installed) {
+                DebugLogger.e(TAG, "", null)
+                DebugLogger.e(TAG, "✗ 无法自动安装 Shower Server", null)
+                DebugLogger.e(TAG, "", null)
+                DebugLogger.e(TAG, "请手动安装 Shower Server:", null)
+                DebugLogger.e(TAG, "  1. 从 GitHub 下载 Shower Server APK", null)
+                DebugLogger.e(TAG, "  2. 在设备上安装 APK", null)
+                DebugLogger.e(TAG, "  3. 打开 Shower Server 应用一次", null)
+                DebugLogger.e(TAG, "", null)
+                DebugLogger.e(TAG, "下载地址: https://github.com/king0929zion/ZiZip/releases", null)
+                return@withContext false
+            }
+        }
+
+        // 通过 app_process 启动 Shower Server 服务
+        // 使用已安装 APK 的路径
+        val cmd = "CLASSPATH=/data/app/$SHOWER_PACKAGE*/base.apk app_process / $SHOWER_MAIN >/data/local/tmp/shower.log 2>&1 &"
         DebugLogger.d(TAG, "启动命令: $cmd")
 
-        // 首先尝试通过 am start 启动 Activity
-        val startCmd = "am start -n $SHOWER_PACKAGE/.MainActivity 2>/dev/null || $cmd"
+        // 首先尝试通过 am start 启动 Activity（确保应用初始化）
+        val startCmd = "am start -n $SHOWER_PACKAGE/.MainActivity 2>/dev/null; $cmd"
         val result = AndroidShellExecutor.executeCommand(startCmd)
 
         if (!result.success) {
@@ -89,6 +160,7 @@ object ShowerServerManager {
         }
 
         DebugLogger.e(TAG, "✗ Shower Server 启动超时", null)
+        DebugLogger.e(TAG, "", null)
         DebugLogger.e(TAG, "调试信息:", null)
         DebugLogger.e(TAG, "  1. 检查日志: adb shell cat /data/local/tmp/shower.log", null)
         DebugLogger.e(TAG, "  2. 检查进程: adb shell ps | grep shower", null)
@@ -98,6 +170,7 @@ object ShowerServerManager {
 
     /**
      * 停止服务器
+     * 参考 Operit 实现，使用 || true 确保命令总是返回成功
      */
     suspend fun stopServer(): Boolean {
         DebugLogger.d(TAG, "停止 Shower Server...")
@@ -122,16 +195,23 @@ object ShowerServerManager {
     }
 
     /**
-     * 获取 Shower Server 下载信息
+     * 获取 Shower Server 信息
+     * 更新为反映新的自动安装功能
      */
-    fun getDownloadInfo(): DownloadInfo {
-        return DownloadInfo(
+    fun getServerInfo(): ServerInfo {
+        return ServerInfo(
             packageName = SHOWER_PACKAGE,
             appName = "Shower Server",
-            description = "虚拟屏幕服务应用",
+            description = "虚拟屏幕服务应用（支持自动安装）",
             version = "1.0",
-            downloadUrl = "https://github.com/king0929zion/ZiZip/releases",
-            instructions = listOf(
+            sourceUrl = "https://github.com/king0929zion/ZiZip/releases",
+            features = listOf(
+                "自动从 assets 安装（无需手动下载）",
+                "通过 app_process 后台运行",
+                "WebSocket 通信（端口 8986）",
+                "H.264 视频流编码"
+            ),
+            manualInstructions = listOf(
                 "1. 下载 Shower Server APK",
                 "2. 在设备上安装 APK",
                 "3. 打开 Shower Server 应用一次（初始化服务）",
@@ -140,12 +220,13 @@ object ShowerServerManager {
         )
     }
 
-    data class DownloadInfo(
+    data class ServerInfo(
         val packageName: String,
         val appName: String,
         val description: String,
         val version: String,
-        val downloadUrl: String,
-        val instructions: List<String>
+        val sourceUrl: String,
+        val features: List<String>,
+        val manualInstructions: List<String>
     )
 }

@@ -88,7 +88,7 @@ object ShowerServerManager {
             DebugLogger.i(TAG, "✓ APK 安装成功")
             true
         } else {
-            DebugLogger.e(TAG, "✗ APK 安装失败: ${result.stderr}", null)
+            DebugLogger.e(TAG, "✗ APK 安装失败: ${result.error}", null)
             false
         }
     }
